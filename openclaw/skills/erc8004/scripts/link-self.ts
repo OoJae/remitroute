@@ -67,7 +67,7 @@ async function main(execute: boolean): Promise<void> {
   // Rebuild the registration JSON (now including the Self endpoint, since
   // SELF_AGENT_ID is set) and pin it.
   const doc = buildRegistration(owner);
-  const hasSelf = doc.endpoints.some((e) => e.type === "self");
+  const hasSelf = doc.services.some((s) => s.name === "Self");
   if (!hasSelf) {
     throw new Error("SELF_AGENT_ID not set in config; set it so the registration advertises Self");
   }

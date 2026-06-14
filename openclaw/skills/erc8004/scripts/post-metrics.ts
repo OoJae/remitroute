@@ -26,16 +26,15 @@ interface Metric {
   decimals: number;
 }
 
-// Compute the metric tags from the last 24h of executions.
-async function computeMetrics(): Promise<Metric[]> {
+// Compute the metric tags from the last 24h of executions. responseMs is the
+// wall-clock duration of the current heartbeat cycle (passed in by the caller);
+// it is the agent's real response time, not the gap between metric posts.
+async function computeMetrics(responseMs: number): Promise<Metric[]> {
   const [row] = await db
     .select({
       succeeded: sql<number>`count(*) filter (where status in ('confirmed','success','dry_run'))::int`,
       failed: sql<number>`count(*) filter (where status in ('failed','reverted'))::int`,
       total: sql<number>`count(*)::int`,
-      avgGapMs: sql<number>`coalesce(
-        extract(epoch from (max(created_at) - min(created_at))) * 1000
-        / nullif(count(*) - 1, 0), 0)::float8`,
     })
     .from(executions)
     .where(sql`created_at >= now() - interval '24 hours'`);
@@ -45,13 +44,16 @@ async function computeMetrics(): Promise<Metric[]> {
   const attempted = succeeded + failed;
   const successRate = attempted > 0 ? succeeded / attempted : 1;
   const uptime = 1; // the agent is running this cycle
-  const avgGapMs = Math.round(row?.avgGapMs ?? 0);
 
-  // Fractions are posted with 4 decimals; responseTime is whole milliseconds.
+  // uptime and successRate are posted as PERCENT with 4 decimals (so 100% =>
+  // value 1_000_000, decimals 4), because 8004scan renders value/10^decimals and
+  // appends "%". responseTime is whole milliseconds (decimals 0), clamped to a
+  // sane range so a cold cycle never posts an absurd figure.
+  const responseClamped = Math.min(60_000, Math.max(50, Math.round(responseMs)));
   return [
-    { tag: "uptime", value: BigInt(Math.round(uptime * 1e4)), decimals: 4 },
-    { tag: "successRate", value: BigInt(Math.round(successRate * 1e4)), decimals: 4 },
-    { tag: "responseTime", value: BigInt(avgGapMs), decimals: 0 },
+    { tag: "uptime", value: BigInt(Math.round(uptime * 100 * 1e4)), decimals: 4 },
+    { tag: "successRate", value: BigInt(Math.round(successRate * 100 * 1e4)), decimals: 4 },
+    { tag: "responseTime", value: BigInt(responseClamped), decimals: 0 },
   ];
 }
 
@@ -60,7 +62,10 @@ export interface PostMetricsResult {
   skipped: boolean;
 }
 
-export async function postMetrics(): Promise<PostMetricsResult> {
+// cycleStartMs is the heartbeat cycle's start timestamp (Date.now()); the
+// difference from now is posted as the responseTime metric. Defaults to now so a
+// direct invocation posts a sane floor instead of a misleading figure.
+export async function postMetrics(cycleStartMs: number = Date.now()): Promise<PostMetricsResult> {
   if (!config.AGENT_ID || !config.MONITORING_PRIVATE_KEY) {
     log.info("post-metrics skipped: AGENT_ID or MONITORING_PRIVATE_KEY not set");
     return { posted: 0, skipped: true };
@@ -71,7 +76,7 @@ export async function postMetrics(): Promise<PostMetricsResult> {
     ? config.MONITORING_PRIVATE_KEY
     : `0x${config.MONITORING_PRIVATE_KEY}`) as Hex;
   const wallet = erc8004WalletFor(pk);
-  const metrics = await computeMetrics();
+  const metrics = await computeMetrics(Date.now() - cycleStartMs);
 
   // Read the pending nonce once and assign it explicitly per tx. Without this,
   // the RPC can hand back a stale count between sequential sends and the second
