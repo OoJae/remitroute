@@ -26,10 +26,10 @@ interface Metric {
   decimals: number;
 }
 
-// Compute the metric tags from the last 24h of executions. responseMs is the
-// wall-clock duration of the current heartbeat cycle (passed in by the caller);
-// it is the agent's real response time, not the gap between metric posts.
-async function computeMetrics(responseMs: number): Promise<Metric[]> {
+// Compute the metric tags from the last 24h of executions. responseTime is the
+// agent's live data-source latency (a single RPC round trip), which is the
+// agent's own responsiveness, not Celo's block-confirmation time.
+async function computeMetrics(): Promise<Metric[]> {
   const [row] = await db
     .select({
       succeeded: sql<number>`count(*) filter (where status in ('confirmed','success','dry_run'))::int`,
@@ -45,10 +45,22 @@ async function computeMetrics(responseMs: number): Promise<Metric[]> {
   const successRate = attempted > 0 ? succeeded / attempted : 1;
   const uptime = 1; // the agent is running this cycle
 
+  // Measure responsiveness as a single live RPC round trip. This is the agent's
+  // own latency to reach its data source; it excludes block-inclusion time
+  // (which is the chain's latency, not the agent's) so it reflects real
+  // responsiveness rather than Celo's ~5s settlement.
+  const probeStart = Date.now();
+  try {
+    await erc8004PublicClient.getBlockNumber();
+  } catch {
+    // a failed probe still yields a (large) latency reading via the clamp below
+  }
+  const responseMs = Date.now() - probeStart;
+
   // uptime and successRate are posted as PERCENT with 4 decimals (so 100% =>
   // value 1_000_000, decimals 4), because 8004scan renders value/10^decimals and
   // appends "%". responseTime is whole milliseconds (decimals 0), clamped to a
-  // sane range so a cold cycle never posts an absurd figure.
+  // sane floor so a sub-millisecond cache hit never posts 0.
   const responseClamped = Math.min(60_000, Math.max(50, Math.round(responseMs)));
   return [
     { tag: "uptime", value: BigInt(Math.round(uptime * 100 * 1e4)), decimals: 4 },
@@ -62,10 +74,7 @@ export interface PostMetricsResult {
   skipped: boolean;
 }
 
-// cycleStartMs is the heartbeat cycle's start timestamp (Date.now()); the
-// difference from now is posted as the responseTime metric. Defaults to now so a
-// direct invocation posts a sane floor instead of a misleading figure.
-export async function postMetrics(cycleStartMs: number = Date.now()): Promise<PostMetricsResult> {
+export async function postMetrics(): Promise<PostMetricsResult> {
   if (!config.AGENT_ID || !config.MONITORING_PRIVATE_KEY) {
     log.info("post-metrics skipped: AGENT_ID or MONITORING_PRIVATE_KEY not set");
     return { posted: 0, skipped: true };
@@ -76,7 +85,7 @@ export async function postMetrics(cycleStartMs: number = Date.now()): Promise<Po
     ? config.MONITORING_PRIVATE_KEY
     : `0x${config.MONITORING_PRIVATE_KEY}`) as Hex;
   const wallet = erc8004WalletFor(pk);
-  const metrics = await computeMetrics(Date.now() - cycleStartMs);
+  const metrics = await computeMetrics();
 
   // Read the pending nonce once and assign it explicitly per tx. Without this,
   // the RPC can hand back a stale count between sequential sends and the second

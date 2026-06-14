@@ -61,7 +61,6 @@ export interface CycleSummary {
 
 export async function runDue(): Promise<CycleSummary> {
   const cycleId = crypto.randomUUID();
-  const cycleStartMs = Date.now();
   const summary: CycleSummary = {
     cycleId,
     gasPass: false,
@@ -355,7 +354,7 @@ export async function runDue(): Promise<CycleSummary> {
   // Guardian 7: post ERC-8004 metric tags from the monitoring wallet. No-ops
   // until AGENT_ID and the monitoring key are set; never breaks the cycle.
   try {
-    await postMetrics(cycleStartMs);
+    await postMetrics();
   } catch (err) {
     log.error({ err }, "post-metrics failed in cycle");
   }
