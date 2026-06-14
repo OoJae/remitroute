@@ -44,6 +44,13 @@ function updateEnvAppBaseUrl(url: string): void {
   writeFileSync(ENV_PATH, next);
 }
 
+// Optional --url <value> overrides the tunnel-journal lookup, so this can also
+// re-point the onchain agentURI at a stable host (e.g. the Vercel deployment).
+function urlArg(): string | undefined {
+  const i = process.argv.indexOf("--url");
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
 async function main(execute: boolean): Promise<void> {
   if (!config.AGENT_ID) throw new Error("AGENT_ID not set");
   if (!config.AGENT_PRIVATE_KEY || !config.AGENT_WALLET_ADDRESS) {
@@ -51,7 +58,7 @@ async function main(execute: boolean): Promise<void> {
   }
   const owner = getAddress(config.AGENT_WALLET_ADDRESS);
 
-  const url = currentTunnelUrl();
+  const url = (urlArg() ?? currentTunnelUrl()).replace(/\/$/, "");
   if (url === config.APP_BASE_URL.replace(/\/$/, "")) {
     log.info({ url }, "tunnel URL unchanged; nothing to do");
     return;
