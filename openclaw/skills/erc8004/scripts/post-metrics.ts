@@ -51,7 +51,7 @@ async function computeMetrics(): Promise<Metric[]> {
   // responsiveness rather than Celo's ~5s settlement.
   const probeStart = Date.now();
   try {
-    await erc8004PublicClient.getBlockNumber();
+    await erc8004PublicClient.getBlockNumber({ cacheTime: 0 });
   } catch {
     // a failed probe still yields a (large) latency reading via the clamp below
   }
