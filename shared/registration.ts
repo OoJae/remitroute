@@ -1,13 +1,8 @@
 // Build the ERC-8004 registration JSON by filling the placeholders in the
 // provided registration/remitroute-agent.json with live config. Used by both
 // register.ts (to pin and mint) and the /.well-known/agent.json route.
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const templatePath = join(here, "..", "registration", "remitroute-agent.json");
+import { REGISTRATION_TEMPLATE } from "./registrationTemplate.js";
 
 export interface RegistrationDoc {
   type: string;
@@ -22,7 +17,7 @@ export interface RegistrationDoc {
 // baseUrlOverride lets callers (e.g. the tunnel URL refresher) build against a
 // new public URL before the process config is reloaded.
 export function buildRegistration(owner: string, baseUrlOverride?: string): RegistrationDoc {
-  const tmpl = JSON.parse(readFileSync(templatePath, "utf8")) as RegistrationDoc;
+  const tmpl = REGISTRATION_TEMPLATE;
   const base = (baseUrlOverride ?? config.APP_BASE_URL).replace(/\/$/, "");
   const chainId = config.ERC8004_NETWORK === "mainnet" ? 42220 : 11142220;
 
