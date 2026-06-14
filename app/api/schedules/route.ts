@@ -1,0 +1,75 @@
+// Create and list schedules for a user. The Mini App uses this to set rules
+// (structured form input). Natural-language parsing is a later phase.
+import { NextResponse } from "next/server";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "../../../shared/db/client.js";
+import { schedules, users } from "../../../shared/db/schema.js";
+import { CadenceSchema } from "../../../shared/cadence.js";
+import { ScheduleKind, validateParams } from "../../../shared/scheduleParams.js";
+import { resolveNextRun } from "../../../openclaw/skills/remitroute-core/scripts/create-schedule.js";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const CreateBody = z.object({
+  user: z.string().uuid(),
+  kind: ScheduleKind,
+  params: z.record(z.unknown()),
+  cadence: CadenceSchema,
+  nextRun: z.string().default("now"),
+});
+
+export async function POST(request: Request) {
+  const parsed = CreateBody.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid body", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.id, parsed.data.user));
+  if (!user) return NextResponse.json({ error: "unknown user" }, { status: 404 });
+
+  // Validate params against the kind's schema before saving.
+  let params: Record<string, unknown>;
+  try {
+    params = validateParams(parsed.data.kind, parsed.data.params);
+  } catch (err) {
+    return NextResponse.json(
+      { error: "invalid params for kind", detail: (err as Error).message },
+      { status: 400 },
+    );
+  }
+
+  const nextRun = resolveNextRun(parsed.data.nextRun);
+  const [row] = await db
+    .insert(schedules)
+    .values({
+      userId: parsed.data.user,
+      kind: parsed.data.kind,
+      params,
+      cadence: parsed.data.cadence,
+      nextRun,
+      status: "active",
+    })
+    .returning();
+
+  return NextResponse.json({ scheduleId: row?.id, nextRun: nextRun.toISOString() });
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const parsed = z.string().uuid().safeParse(url.searchParams.get("user"));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "user query param must be a uuid" }, { status: 400 });
+  }
+  const rows = await db
+    .select()
+    .from(schedules)
+    .where(and(eq(schedules.userId, parsed.data), ne(schedules.status, "cancelled")))
+    .orderBy(desc(schedules.createdAt))
+    .limit(50);
+  return NextResponse.json({ items: rows });
+}

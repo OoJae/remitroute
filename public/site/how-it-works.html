@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/site/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#0B0A09; }
+  body{ -webkit-font-smoothing:antialiased; }
+  ::selection{ background:#E9A53C; color:#0B0A09; }
+  @keyframes hw-blink{ 0%,100%{ opacity:1;} 50%{ opacity:0.2;} }
+  @keyframes hw-flow{ to{ stroke-dashoffset:-240; } }
+  @keyframes hw-beat{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.35); } }
+
+  /* ---- mobile optimisation (added) ---- */
+  html,body{ overflow-x:hidden; max-width:100%; }
+  @media (max-width:1024px), (pointer:coarse){
+    [style*="grid-template-columns:160px 1fr 1.3fr"],
+    [style*="grid-template-columns:200px 1fr"],
+    [style*="grid-template-columns:120px 1fr"],
+    [style*="grid-template-columns:248px minmax(0,1fr)"],
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="grid-template-columns:repeat(auto-fit"]{ grid-template-columns:1fr !important; }
+    [style*="grid-template-columns:90px 1fr 1.4fr 1fr 110px"]{ display:flex !important; flex-wrap:wrap; gap:4px 12px; }
+    [style*="17vw"]{ font-size:clamp(34px,12vw,200px) !important; }
+    nav{ flex-wrap:wrap; row-gap:10px; }
+    nav > div[style*="Space Mono"]{ order:3; flex-basis:100%; justify-content:center; display:flex; }
+    nav[style*="mix-blend-mode"]{ position:sticky !important; mix-blend-mode:normal !important; background:rgba(11,10,9,0.92) !important; backdrop-filter:blur(10px); border-bottom:1px solid rgba(242,237,227,0.12); align-items:center !important; }
+    nav[style*="mix-blend-mode"] > div:nth-child(2){ display:none !important; }
+    nav[style*="mix-blend-mode"] > div:last-child > div{ display:none !important; }
+    [style*="animation:rr-float"]{ display:none !important; }
+  }
+</style>
+</helmet>
+
+<div style="background:#0B0A09; color:#F2EDE3; font-family:'Archivo',system-ui,sans-serif; overflow-x:hidden;">
+
+  <!-- NAV -->
+  <nav style="position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px clamp(20px,4vw,52px); border-bottom:1px solid rgba(242,237,227,0.14); background:rgba(11,10,9,0.9); backdrop-filter:blur(10px);">
+    <a href="/" style="display:flex; align-items:center; gap:11px; text-decoration:none;">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="flex:none;"><circle cx="6" cy="25" r="3.4" stroke="#E9A53C" stroke-width="2"></circle><circle cx="26" cy="7" r="3.4" stroke="#E9A53C" stroke-width="2"></circle><path d="M7.6 22.6 C 16 16, 12 9, 24.2 9.2" stroke="#E9A53C" stroke-width="2" stroke-linecap="round"></path><circle cx="16.2" cy="13.4" r="2.6" fill="#34B27B"></circle></svg>
+      <span style="font-weight:900; font-size:15px; letter-spacing:-0.01em; color:#F2EDE3;">REMIT<span style="color:#E9A53C;">ROUTE</span></span>
+    </a>
+    <div style="display:flex; gap:clamp(14px,2vw,28px); font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.7);">
+      <a href="/how-it-works" style="color:#E9A53C; text-decoration:none;">HOW IT WORKS</a>
+      <a href="/dashboard" style="color:inherit; text-decoration:none;">DASHBOARD</a>
+      <a href="/minipay" style="color:inherit; text-decoration:none;">MINIPAY APP</a>
+    </div>
+    <a href="/app" style="display:inline-flex; align-items:center; gap:8px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:12px; padding:10px 15px; text-decoration:none; border-radius:2px;">OPEN IN MINIPAY <span style="font-size:14px;">&#8599;</span></a>
+  </nav>
+
+  <!-- HERO -->
+  <section style="padding:clamp(70px,9vw,140px) clamp(20px,5vw,80px) clamp(50px,6vw,90px);">
+    <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:26px;">/ HOW IT WORKS</div>
+    <h1 style="margin:0; font-weight:900; text-transform:uppercase; font-size:clamp(44px,9vw,150px); line-height:0.84; letter-spacing:-0.035em;">Set it once.<br>It runs <span style="color:#E9A53C;">onchain.</span></h1>
+    <p style="max-width:60ch; margin:34px 0 0; font-size:clamp(15px,1.4vw,19px); line-height:1.55; color:rgba(242,237,227,0.72);">Three things you do once, then an autonomous loop that does the rest. No dashboards to babysit, no transactions to sign. Every action is bounded, logged, and provable.</p>
+  </section>
+
+  <!-- THREE STEPS -->
+  <section style="border-top:1px solid rgba(242,237,227,0.12);">
+    <div style="display:grid; grid-template-columns:120px 1fr; gap:clamp(20px,4vw,60px); padding:clamp(40px,5vw,72px) clamp(20px,5vw,80px); border-bottom:1px solid rgba(242,237,227,0.12); align-items:start;">
+      <div style="font-weight:900; font-size:clamp(40px,5vw,72px); line-height:0.9; letter-spacing:-0.04em; color:#E9A53C;">01</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:clamp(20px,3vw,48px); align-items:start;">
+        <div>
+          <h3 style="margin:0; font-weight:800; text-transform:uppercase; font-size:clamp(26px,3vw,42px); letter-spacing:-0.025em;">Connect in MiniPay</h3>
+          <p style="margin:18px 0 0; font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:42ch;">Open RemitRoute inside MiniPay. It detects the wallet and auto-connects. One tap, no seed phrase, no connect button, no signing for recurring actions.</p>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:12.5px; line-height:2; color:rgba(242,237,227,0.7); border:1px solid rgba(242,237,227,0.14); padding:18px;">
+          <div style="color:rgba(242,237,227,0.45);">// detected</div>
+          <div>provider.isMiniPay = <span style="color:#34B27B;">true</span></div>
+          <div>address = 0x7a91&hellip;3c0e</div>
+          <div style="color:#E9A53C;">status: AUTO-CONNECTED</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:120px 1fr; gap:clamp(20px,4vw,60px); padding:clamp(40px,5vw,72px) clamp(20px,5vw,80px); border-bottom:1px solid rgba(242,237,227,0.12); align-items:start;">
+      <div style="font-weight:900; font-size:clamp(40px,5vw,72px); line-height:0.9; letter-spacing:-0.04em; color:rgba(242,237,227,0.85);">02</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:clamp(20px,3vw,48px); align-items:start;">
+        <div>
+          <h3 style="margin:0; font-weight:800; text-transform:uppercase; font-size:clamp(26px,3vw,42px); letter-spacing:-0.025em;">Set a rule in plain language</h3>
+          <p style="margin:18px 0 0; font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:42ch;">Type it the way you would say it, or pick a preset. RemitRoute parses it into a typed, capped schedule and reads it back to you before anything moves.</p>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:12.5px; line-height:1.9; color:rgba(242,237,227,0.7); border:1px solid rgba(242,237,227,0.14); padding:18px;">
+          <div style="color:rgba(242,237,227,0.45);">"Save 10 percent every Friday"</div>
+          <div style="margin-top:10px; color:#34B27B;">&#8595; parsed</div>
+          <div style="margin-top:6px;">kind: <span style="color:#E9A53C;">savings_sweep</span></div>
+          <div>amount: 10% idle cUSD</div>
+          <div>cadence: FRI 09:00</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:120px 1fr; gap:clamp(20px,4vw,60px); padding:clamp(40px,5vw,72px) clamp(20px,5vw,80px); align-items:start;">
+      <div style="font-weight:900; font-size:clamp(40px,5vw,72px); line-height:0.9; letter-spacing:-0.04em; color:rgba(242,237,227,0.85);">03</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:clamp(20px,3vw,48px); align-items:start;">
+        <div>
+          <h3 style="margin:0; font-weight:800; text-transform:uppercase; font-size:clamp(26px,3vw,42px); letter-spacing:-0.025em;">The agent runs it onchain</h3>
+          <p style="margin:18px 0 0; font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:42ch;">Every 20 minutes the agent wakes, checks what is due, and fires the actions. Gas is paid in cUSD, so no one ever needs to hold CELO. Each result is stamped with a proof hash on the live feed.</p>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:12.5px; line-height:1.9; color:rgba(242,237,227,0.7); border:1px solid rgba(242,237,227,0.14); padding:18px;">
+          <div style="color:rgba(242,237,227,0.45);">heartbeat #4192</div>
+          <div>due: 1 schedule</div>
+          <div>tx: 0x4eef&hellip;83f0</div>
+          <div>feeCurrency: cUSD</div>
+          <div style="color:#34B27B;">status: SETTLED &#10003;</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HEARTBEAT LOOP -->
+  <section style="border-top:1px solid rgba(242,237,227,0.12); background:#0E0C0A; padding:clamp(70px,9vw,140px) clamp(20px,5vw,80px);">
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:24px;">
+      <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#E9A53C; box-shadow:0 0 14px #E9A53C; animation:hw-beat 1.2s ease-in-out infinite;"></span>
+      <span style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C;">/ THE HEARTBEAT LOOP</span>
+    </div>
+    <h2 style="margin:0 0 16px; font-weight:900; text-transform:uppercase; font-size:clamp(30px,4.4vw,64px); line-height:0.95; letter-spacing:-0.03em; max-width:20ch;">Every 20 minutes, unattended.</h2>
+    <p style="margin:0 0 clamp(40px,5vw,64px); font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:56ch;">A guardian loop runs on a fixed cadence. Health comes first and can block the whole cycle. Money only moves when every guard is green.</p>
+
+    <!-- EKG line -->
+    <svg viewBox="0 0 1200 120" width="100%" height="auto" style="display:block; max-height:120px; margin-bottom:40px;">
+      <defs><linearGradient id="hwg" x1="0" x2="1"><stop offset="0" stop-color="#E9A53C"></stop><stop offset="1" stop-color="#34B27B"></stop></linearGradient></defs>
+      <path d="M0 60 L 360 60 L 390 60 L 410 20 L 440 100 L 470 60 L 560 60 L 600 60 L 620 30 L 650 90 L 680 60 L 1200 60" fill="none" stroke="url(#hwg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14 10" style="animation:hw-flow 4s linear infinite;"></path>
+    </svg>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12);">
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em; margin-bottom:auto;">GUARD 01</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Health check</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">RPC liveness, fallback ready, gas buffer above the floor. Blocking.</div>
+      </div>
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em; margin-bottom:auto;">GUARD 02</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Load due rules</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">Every schedule whose next run has arrived, across all users.</div>
+      </div>
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em; margin-bottom:auto;">GUARD 03</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Execute</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">Enforce caps, lock, build the tx with gas in cUSD, send, reschedule.</div>
+      </div>
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em; margin-bottom:auto;">GUARD 04</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Post metrics</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">Uptime, success rate, response time, written to ERC-8004 onchain.</div>
+      </div>
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em; margin-bottom:auto;">GUARD 05</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Confirm</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">Notify the user in-app and on Telegram with the proof hash.</div>
+      </div>
+      <div style="background:#0E0C0A; padding:26px; min-height:170px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; color:#E9A53C; letter-spacing:0.1em; margin-bottom:auto;">GUARD 06</div>
+        <div style="font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-top:24px;">Safety + halt</div>
+        <div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:10px; line-height:1.5;">Anomaly checks. If volume or failures spike, pause and alert.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- UNDER THE HOOD -->
+  <section style="border-top:1px solid rgba(242,237,227,0.12); padding:clamp(70px,9vw,140px) clamp(20px,5vw,80px);">
+    <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:24px;">/ THE RAILS</div>
+    <h2 style="margin:0 0 clamp(40px,5vw,64px); font-weight:900; text-transform:uppercase; font-size:clamp(30px,4.4vw,64px); line-height:0.95; letter-spacing:-0.03em; max-width:18ch;">Real protocols. Real transactions.</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); border-top:1px solid rgba(242,237,227,0.14); border-left:1px solid rgba(242,237,227,0.14);">
+      <div style="padding:30px; border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14);"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em;">FEE ABSTRACTION</div><div style="font-weight:800; font-size:21px; margin-top:18px; letter-spacing:-0.01em;">Gas in cUSD</div><div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:8px; line-height:1.5;">No CELO needed, ever. The user stays in stablecoins.</div></div>
+      <div style="padding:30px; border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14);"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em;">MENTO</div><div style="font-weight:800; font-size:21px; margin-top:18px; letter-spacing:-0.01em;">FX swaps</div><div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:8px; line-height:1.5;">cUSD to cKES, cNGN, cZAR with slippage protection.</div></div>
+      <div style="padding:30px; border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14);"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em;">AAVE V3</div><div style="font-weight:800; font-size:21px; margin-top:18px; letter-spacing:-0.01em;">Yield</div><div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:8px; line-height:1.5;">Supply and withdraw idle stablecoins on schedule.</div></div>
+      <div style="padding:30px; border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14);"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.1em;">ERC20</div><div style="font-weight:800; font-size:21px; margin-top:18px; letter-spacing:-0.01em;">Remittances + DCA</div><div style="font-size:13px; color:rgba(242,237,227,0.55); margin-top:8px; line-height:1.5;">Scheduled transfers and dollar-cost buys.</div></div>
+    </div>
+  </section>
+
+  <!-- SAFETY + TRUST -->
+  <section style="border-top:1px solid rgba(242,237,227,0.12); padding:clamp(70px,9vw,130px) clamp(20px,5vw,80px); display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:clamp(36px,5vw,72px);">
+    <div>
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#34B27B; margin-bottom:22px;">/ GUARDRAILS</div>
+      <h2 style="margin:0 0 24px; font-weight:900; text-transform:uppercase; font-size:clamp(26px,3.2vw,42px); line-height:0.98; letter-spacing:-0.025em;">Capped, monitored, haltable.</h2>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12); font-family:'Space Mono',monospace; font-size:12px;">
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> SPEND CAPS</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> CIRCUIT BREAKER</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> GAS FLOOR</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> IDEMPOTENCY</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#34B27B; margin-bottom:22px;">/ TRUST</div>
+      <h2 style="margin:0 0 24px; font-weight:900; text-transform:uppercase; font-size:clamp(26px,3.2vw,42px); line-height:0.98; letter-spacing:-0.025em;">Provable, end to end.</h2>
+      <div style="font-family:'Space Mono',monospace; font-size:13px; line-height:1.9; color:rgba(242,237,227,0.72); border:1px solid rgba(242,237,227,0.14); padding:22px;">
+        <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">IDENTITY</span><span>ERC-8004 #9308</span></div>
+        <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">REPUTATION</span><span style="color:#34B27B;">ONCHAIN FEEDBACK</span></div>
+        <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">HUMAN-BACKED</span><span>SELF AGENT ID</span></div>
+        <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">AGENT API</span><span style="color:#E9A53C;">x402 PAID</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section style="border-top:1px solid rgba(242,237,227,0.12); padding:clamp(60px,7vw,110px) clamp(20px,5vw,80px); text-align:center;">
+    <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:26px;">SET ONE RULE</div>
+    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:40px;">
+      <a href="/app" style="display:inline-flex; align-items:center; gap:10px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:16px; padding:17px 26px; text-decoration:none; border-radius:2px;">Open in MiniPay <span style="font-size:18px;">&#8599;</span></a>
+      <a href="/dashboard" style="display:inline-flex; align-items:center; gap:10px; border:1px solid rgba(242,237,227,0.32); color:#F2EDE3; font-weight:700; font-size:16px; padding:16px 24px; text-decoration:none; border-radius:2px;">Watch the live feed</a>
+    </div>
+    <a href="/" style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.1em; color:rgba(242,237,227,0.5); text-decoration:none;">&#8592; BACK TO REMITROUTE</a>
+  </section>
+
+</div>
+</x-dc>
+</body>
+</html>

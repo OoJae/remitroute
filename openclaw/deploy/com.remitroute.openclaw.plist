@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS LaunchAgent for running the OpenClaw gateway locally during development.
+  Install:
+    cp openclaw/deploy/com.remitroute.openclaw.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.remitroute.openclaw.plist
+  Confirm the gateway binary path and flags against the live OpenClaw docs.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.remitroute.openclaw</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/openclaw</string>
+        <string>gateway</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/remitroute-openclaw.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/remitroute-openclaw.err.log</string>
+</dict>
+</plist>

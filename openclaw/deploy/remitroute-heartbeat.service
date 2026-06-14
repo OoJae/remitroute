@@ -1,0 +1,17 @@
+# Deterministic RemitRoute money engine. Runs one cycle of the scheduler. Paired
+# with remitroute-heartbeat.timer. Install to /etc/systemd/system/ on the VPS.
+# Node path matches the nvm install present on the box; adjust if it changes.
+
+[Unit]
+Description=RemitRoute heartbeat engine (run-due, one cycle)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/remitroute-core/scripts/run-due.ts
+TimeoutStartSec=300

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/site/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#0B0A09; }
+  body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  ::selection{ background:#E9A53C; color:#0B0A09; }
+  @keyframes rr-marquee{ from{ transform:translateX(0);} to{ transform:translateX(-50%);} }
+  @keyframes rr-blink{ 0%,100%{ opacity:1;} 50%{ opacity:0.15;} }
+  @keyframes rr-pulse{ 0%{ transform:scale(1); opacity:0.9;} 70%{ transform:scale(2.6); opacity:0;} 100%{ opacity:0;} }
+  @keyframes rr-cue{ 0%{ transform:translateY(0); opacity:0;} 40%{ opacity:1;} 100%{ transform:translateY(14px); opacity:0;} }
+  @keyframes rr-float{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+
+  /* ---- mobile optimisation (added) ---- */
+  html,body{ overflow-x:hidden; max-width:100%; }
+  @media (max-width:1024px), (pointer:coarse){
+    [style*="grid-template-columns:160px 1fr 1.3fr"],
+    [style*="grid-template-columns:200px 1fr"],
+    [style*="grid-template-columns:120px 1fr"],
+    [style*="grid-template-columns:248px minmax(0,1fr)"],
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="grid-template-columns:repeat(auto-fit"]{ grid-template-columns:1fr !important; }
+    [style*="grid-template-columns:90px 1fr 1.4fr 1fr 110px"]{ display:flex !important; flex-wrap:wrap; gap:4px 12px; }
+    [style*="17vw"]{ font-size:clamp(34px,12vw,200px) !important; }
+    nav{ flex-wrap:wrap; row-gap:10px; }
+    nav > div[style*="Space Mono"]{ order:3; flex-basis:100%; justify-content:center; display:flex; }
+    nav[style*="mix-blend-mode"]{ position:sticky !important; mix-blend-mode:normal !important; background:rgba(11,10,9,0.92) !important; backdrop-filter:blur(10px); border-bottom:1px solid rgba(242,237,227,0.12); align-items:center !important; }
+    nav[style*="mix-blend-mode"] > div:nth-child(2){ display:none !important; }
+    nav[style*="mix-blend-mode"] > div:last-child > div{ display:none !important; }
+    [style*="animation:rr-float"]{ display:none !important; }
+  }
+</style>
+</helmet>
+
+<div style="background:#0B0A09; color:#F2EDE3; font-family:'Archivo',system-ui,sans-serif; overflow-x:hidden; position:relative;">
+
+  <div ref="{{ progressRef }}" style="position:fixed; top:0; left:0; height:2px; width:100%; background:linear-gradient(90deg,#E9A53C,#34B27B); transform:scaleX(0); transform-origin:left; z-index:200;"></div>
+
+  <!-- ===================== NAV ===================== -->
+  <nav style="position:fixed; top:0; left:0; right:0; z-index:150; display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:22px clamp(20px,4vw,52px); mix-blend-mode:difference;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <svg width="30" height="30" viewBox="0 0 32 32" fill="none" style="display:block; flex:none;">
+        <circle cx="6" cy="25" r="3.4" stroke="#E9A53C" stroke-width="2"></circle>
+        <circle cx="26" cy="7" r="3.4" stroke="#E9A53C" stroke-width="2"></circle>
+        <path d="M7.6 22.6 C 16 16, 12 9, 24.2 9.2" stroke="#E9A53C" stroke-width="2" stroke-linecap="round"></path>
+        <circle cx="16.2" cy="13.4" r="2.6" fill="#34B27B"></circle>
+      </svg>
+      <div style="line-height:1;">
+        <div style="font-weight:900; font-size:16px; letter-spacing:-0.01em; color:#fff;">REMITROUTE</div>
+        <div style="font-family:'Space Mono',monospace; font-size:9.5px; letter-spacing:0.16em; color:#fff; opacity:0.85; margin-top:5px; display:flex; align-items:center; gap:7px;">
+          CELO MAINNET
+          <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:6px; height:6px; border-radius:50%; background:#34B27B; box-shadow:0 0 8px #34B27B; animation:rr-blink 2s infinite;"></span>AGENT LIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:clamp(14px,2vw,30px); font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:#fff; padding-top:5px;">
+      <a href="/how-it-works" style="color:inherit; text-decoration:none; opacity:0.9;">HOW IT WORKS</a>
+      <a href="/dashboard" style="color:inherit; text-decoration:none; opacity:0.9;">DASHBOARD</a>
+      <a href="/minipay" style="color:inherit; text-decoration:none; opacity:0.9;">MINIPAY APP</a>
+      <a href="/about" style="color:inherit; text-decoration:none; opacity:0.9;">ABOUT</a>
+      <a href="/docs" style="color:inherit; text-decoration:none; opacity:0.9;">DOCS</a>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:18px;">
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.08em; color:#fff; text-align:right; line-height:1.7; opacity:0.9;">
+        <div>LOS {{ lagos }}</div>
+        <div>NBO {{ nairobi }}</div>
+        <div>JNB {{ joburg }}</div>
+      </div>
+      <a href="/app" style="display:inline-flex; align-items:center; gap:8px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:12px; letter-spacing:0.02em; padding:11px 16px; text-decoration:none; border-radius:2px; white-space:nowrap;">OPEN IN MINIPAY <span style="font-size:14px;">&#8599;</span></a>
+    </div>
+  </nav>
+
+  <!-- ===================== HERO ===================== -->
+  <section data-screen-label="Hero" style="position:relative; min-height:100vh; overflow:hidden; display:flex; flex-direction:column;">
+    <canvas ref="{{ canvasRef }}" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+    <div style="position:absolute; inset:0; pointer-events:none; background:radial-gradient(60% 50% at 78% 32%, rgba(233,165,60,0.16), transparent 70%), radial-gradient(55% 45% at 14% 78%, rgba(52,178,123,0.13), transparent 72%);"></div>
+    <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg, rgba(11,10,9,0.55) 0%, rgba(11,10,9,0) 26%, rgba(11,10,9,0) 60%, rgba(11,10,9,0.92) 100%);"></div>
+
+    <!-- floating city tags -->
+    <div style="position:absolute; top:23%; left:5%; z-index:4; animation:rr-float 7s ease-in-out infinite;">
+      <div style="display:flex; align-items:center; gap:8px; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.14em; font-weight:700;"><span style="position:relative; width:8px; height:8px;"><span style="position:absolute; inset:0; border-radius:50%; background:#34B27B;"></span><span style="position:absolute; inset:0; border-radius:50%; background:#34B27B; animation:rr-pulse 2.4s infinite;"></span></span>LAGOS</div>
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.1em; opacity:0.55; margin-top:4px; padding-left:16px;">NG / cNGN</div>
+    </div>
+    <div style="position:absolute; top:30%; right:7%; z-index:4; text-align:right; animation:rr-float 8s ease-in-out infinite 0.6s;">
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.14em; font-weight:700;">NAIROBI<span style="position:relative; width:8px; height:8px;"><span style="position:absolute; inset:0; border-radius:50%; background:#E9A53C;"></span><span style="position:absolute; inset:0; border-radius:50%; background:#E9A53C; animation:rr-pulse 2.4s infinite 0.4s;"></span></span></div>
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.1em; opacity:0.55; margin-top:4px; padding-right:16px;">KE / cKES</div>
+    </div>
+    <div style="position:absolute; bottom:21%; right:13%; z-index:4; text-align:right; animation:rr-float 7.5s ease-in-out infinite 0.3s;">
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.14em; font-weight:700;">JOHANNESBURG<span style="position:relative; width:8px; height:8px;"><span style="position:absolute; inset:0; border-radius:50%; background:#34B27B;"></span><span style="position:absolute; inset:0; border-radius:50%; background:#34B27B; animation:rr-pulse 2.4s infinite 0.9s;"></span></span></div>
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.1em; opacity:0.55; margin-top:4px; padding-right:16px;">ZA / cZAR</div>
+    </div>
+
+    <!-- hero content -->
+    <div style="position:relative; z-index:5; flex:1; display:flex; flex-direction:column; justify-content:center; padding:120px clamp(20px,5vw,80px) 40px;">
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:26px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="width:7px; height:7px; border-radius:50%; background:#34B27B; box-shadow:0 0 10px #34B27B;"></span>
+        LIVE ON CELO MAINNET<span style="opacity:0.4;">/</span>ERC-8004 AGENT #9308
+      </div>
+      <h1 style="margin:0; font-weight:900; text-transform:uppercase; font-size:clamp(48px,10.5vw,176px); line-height:0.86; letter-spacing:-0.035em;">
+        <span style="display:block;">Set one rule.</span>
+        <span style="display:block;">Your money</span>
+        <span style="display:block; color:#E9A53C;">runs itself.</span>
+      </h1>
+      <p style="max-width:620px; margin:34px 0 38px; font-size:clamp(15px,1.45vw,20px); line-height:1.55; color:rgba(242,237,227,0.78); font-weight:500;">
+        RemitRoute is an always-on agent on Celo. Set a savings, FX, or remittance rule once in MiniPay, and it runs onchain forever, with gas paid in stablecoins. You sign nothing for recurring actions.
+      </p>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center;">
+        <a href="/app" style="display:inline-flex; align-items:center; gap:10px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:15px; padding:16px 24px; text-decoration:none; border-radius:2px;">Open in MiniPay <span style="font-size:17px;">&#8599;</span></a>
+        <a href="/dashboard" style="display:inline-flex; align-items:center; gap:10px; border:1px solid rgba(242,237,227,0.32); color:#F2EDE3; font-weight:700; font-size:15px; padding:15px 22px; text-decoration:none; border-radius:2px;">Watch the live feed</a>
+      </div>
+    </div>
+
+    <!-- live ticker -->
+    <div style="position:relative; z-index:5; border-top:1px solid rgba(242,237,227,0.12); background:rgba(11,10,9,0.5); backdrop-filter:blur(6px); overflow:hidden; padding:13px 0;">
+      <div style="display:flex; width:max-content; animation:rr-marquee 38s linear infinite; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.06em;">
+        <div style="display:flex; gap:38px; padding-right:38px;">
+          <span><span style="color:#E9A53C;">SAVINGS SWEEP</span> &nbsp; 12.0 cUSD &#8594; AAVE &nbsp; <span style="color:#34B27B;">SETTLED</span></span>
+          <span><span style="color:#E9A53C;">FX REBALANCE</span> &nbsp; cUSD &#8594; cKES 129.4 &nbsp; <span style="color:#34B27B;">0.4% SLIP</span></span>
+          <span><span style="color:#E9A53C;">REMITTANCE</span> &nbsp; 5,000 cNGN &#8594; +234&#8226;&#8226;&#8226; &nbsp; <span style="color:#34B27B;">SETTLED</span></span>
+          <span><span style="color:#E9A53C;">DCA</span> &nbsp; $2.00 &#8594; CELO &nbsp; <span style="color:#34B27B;">FILLED</span></span>
+          <span><span style="color:#E9A53C;">FX REBALANCE</span> &nbsp; cZAR 40% &nbsp; <span style="color:#34B27B;">ON TARGET</span></span>
+          <span><span style="color:#E9A53C;">GAS PAID IN cUSD</span> &nbsp; $0.0007 &nbsp; <span style="color:#34B27B;">OK</span></span>
+        </div>
+        <div style="display:flex; gap:38px; padding-right:38px;" aria-hidden="true">
+          <span><span style="color:#E9A53C;">SAVINGS SWEEP</span> &nbsp; 12.0 cUSD &#8594; AAVE &nbsp; <span style="color:#34B27B;">SETTLED</span></span>
+          <span><span style="color:#E9A53C;">FX REBALANCE</span> &nbsp; cUSD &#8594; cKES 129.4 &nbsp; <span style="color:#34B27B;">0.4% SLIP</span></span>
+          <span><span style="color:#E9A53C;">REMITTANCE</span> &nbsp; 5,000 cNGN &#8594; +234&#8226;&#8226;&#8226; &nbsp; <span style="color:#34B27B;">SETTLED</span></span>
+          <span><span style="color:#E9A53C;">DCA</span> &nbsp; $2.00 &#8594; CELO &nbsp; <span style="color:#34B27B;">FILLED</span></span>
+          <span><span style="color:#E9A53C;">FX REBALANCE</span> &nbsp; cZAR 40% &nbsp; <span style="color:#34B27B;">ON TARGET</span></span>
+          <span><span style="color:#E9A53C;">GAS PAID IN cUSD</span> &nbsp; $0.0007 &nbsp; <span style="color:#34B27B;">OK</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PROOF STRIP ===================== -->
+  <section data-screen-label="Proof" style="border-top:1px solid rgba(242,237,227,0.12); display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr));">
+    <div style="padding:clamp(28px,3vw,44px); border-right:1px solid rgba(242,237,227,0.12); border-bottom:1px solid rgba(242,237,227,0.12);">
+      <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.14em; color:#E9A53C; margin-bottom:14px;">/ 01</div>
+      <div style="font-weight:900; font-size:clamp(20px,2.1vw,28px); letter-spacing:-0.02em; line-height:1.02;">AGENT #9308</div>
+      <p style="margin:12px 0 0; font-size:14px; line-height:1.5; color:rgba(242,237,227,0.62);">Registered onchain on ERC-8004, verifiable on agentscan.</p>
+    </div>
+    <div style="padding:clamp(28px,3vw,44px); border-right:1px solid rgba(242,237,227,0.12); border-bottom:1px solid rgba(242,237,227,0.12);">
+      <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.14em; color:#E9A53C; margin-bottom:14px;">/ 02</div>
+      <div style="font-weight:900; font-size:clamp(20px,2.1vw,28px); letter-spacing:-0.02em; line-height:1.02;">5 ACTIONS, ALL LIVE</div>
+      <p style="margin:12px 0 0; font-size:14px; line-height:1.5; color:rgba(242,237,227,0.62);">DCA, FX rebalancing, Aave savings, remittances, and withdrawals on mainnet.</p>
+    </div>
+    <div style="padding:clamp(28px,3vw,44px); border-right:1px solid rgba(242,237,227,0.12); border-bottom:1px solid rgba(242,237,227,0.12);">
+      <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.14em; color:#E9A53C; margin-bottom:14px;">/ 03</div>
+      <div style="font-weight:900; font-size:clamp(20px,2.1vw,28px); letter-spacing:-0.02em; line-height:1.02;">GAS IN cUSD</div>
+      <p style="margin:12px 0 0; font-size:14px; line-height:1.5; color:rgba(242,237,227,0.62);">Fee abstraction, no CELO needed, ever.</p>
+    </div>
+    <div style="padding:clamp(28px,3vw,44px); border-bottom:1px solid rgba(242,237,227,0.12);">
+      <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.14em; color:#E9A53C; margin-bottom:14px;">/ 04</div>
+      <div style="font-weight:900; font-size:clamp(20px,2.1vw,28px); letter-spacing:-0.02em; line-height:1.02;">PROOF-STAMPED</div>
+      <p style="margin:12px 0 0; font-size:14px; line-height:1.5; color:rgba(242,237,227,0.62);">A validation hash per transaction, on the public live feed.</p>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT IT DOES ===================== -->
+  <section data-screen-label="Actions" style="padding:clamp(70px,9vw,150px) clamp(20px,5vw,80px);">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:30px; flex-wrap:wrap; margin-bottom:clamp(40px,5vw,72px);">
+      <h2 style="margin:0; font-weight:900; text-transform:uppercase; font-size:clamp(34px,6vw,92px); line-height:0.92; letter-spacing:-0.03em; max-width:14ch;">Five actions.<br>One agent.</h2>
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.06em; color:rgba(242,237,227,0.6); max-width:30ch; line-height:1.7;">Set the rule once. After that, zero taps. The agent wakes on its heartbeat and fires whatever is due.</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); border-top:1px solid rgba(242,237,227,0.14); border-left:1px solid rgba(242,237,227,0.14);">
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.16em; color:#34B27B; margin-bottom:auto;">SAVINGS SWEEP</div>
+        <div style="font-weight:800; font-size:clamp(19px,1.7vw,24px); letter-spacing:-0.01em; margin-top:30px; line-height:1.1;">Move idle cUSD into yield, on schedule.</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); margin-top:14px;">"Save 10 percent every Friday."</div>
+      </div>
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.16em; color:#34B27B; margin-bottom:auto;">FX REBALANCE</div>
+        <div style="font-weight:800; font-size:clamp(19px,1.7vw,24px); letter-spacing:-0.01em; margin-top:30px; line-height:1.1;">Hold the currency mix you want, swapped on Mento.</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); margin-top:14px;">"Keep 40 percent in cKES, rebalance weekly."</div>
+      </div>
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.16em; color:#34B27B; margin-bottom:auto;">REMITTANCE</div>
+        <div style="font-weight:800; font-size:clamp(19px,1.7vw,24px); letter-spacing:-0.01em; margin-top:30px; line-height:1.1;">Send money home on a date you pick.</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); margin-top:14px;">"Send 5,000 cNGN to mum on the 1st."</div>
+      </div>
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column;">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.16em; color:#34B27B; margin-bottom:auto;">DCA</div>
+        <div style="font-weight:800; font-size:clamp(19px,1.7vw,24px); letter-spacing:-0.01em; margin-top:30px; line-height:1.1;">Stack an asset a little at a time.</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); margin-top:14px;">"Stack 2 dollars of CELO daily."</div>
+      </div>
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column; background:rgba(233,165,60,0.05);">
+        <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.16em; color:#34B27B; margin-bottom:auto;">WITHDRAWAL</div>
+        <div style="font-weight:800; font-size:clamp(19px,1.7vw,24px); letter-spacing:-0.01em; margin-top:30px; line-height:1.1;">Pull funds back to your wallet, one tap.</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); margin-top:14px;">Non-custodial. Your money, always.</div>
+      </div>
+      <div style="padding:clamp(26px,2.6vw,40px); border-right:1px solid rgba(242,237,227,0.14); border-bottom:1px solid rgba(242,237,227,0.14); min-height:230px; display:flex; flex-direction:column; justify-content:flex-end;">
+        <a href="/how-it-works" style="text-decoration:none; color:#0B0A09; background:#F2EDE3; font-weight:800; font-size:15px; padding:14px 18px; border-radius:2px; display:inline-flex; align-items:center; justify-content:space-between;">See how it works <span style="font-size:18px;">&#8594;</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MARKET ===================== -->
+  <section data-screen-label="Market" style="padding:clamp(70px,9vw,150px) clamp(20px,5vw,80px); border-top:1px solid rgba(242,237,227,0.12); background:#0E0C0A;">
+    <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:24px;">/ THE MARKET</div>
+    <h2 style="margin:0 0 clamp(40px,5vw,70px); font-weight:900; text-transform:uppercase; font-size:clamp(30px,4.6vw,66px); line-height:0.96; letter-spacing:-0.03em; max-width:20ch;">Built for how money actually moves in Lagos, Nairobi, and Johannesburg.</h2>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12);">
+      <div style="background:#0E0C0A; padding:clamp(28px,3vw,42px);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:30px;">
+          <span style="font-weight:900; font-size:clamp(24px,2.4vw,34px); letter-spacing:-0.02em;">LAGOS</span>
+          <span style="font-family:'Space Mono',monospace; font-size:12px; color:#34B27B;">NG</span>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:13px; color:rgba(242,237,227,0.7); line-height:2;">
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">CURRENCY</span><span>cNGN</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">RATE</span><span>1 cUSD = 1,580</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">USED FOR</span><span style="color:#E9A53C;">REMIT + SAVE</span></div>
+        </div>
+      </div>
+      <div style="background:#0E0C0A; padding:clamp(28px,3vw,42px);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:30px;">
+          <span style="font-weight:900; font-size:clamp(24px,2.4vw,34px); letter-spacing:-0.02em;">NAIROBI</span>
+          <span style="font-family:'Space Mono',monospace; font-size:12px; color:#34B27B;">KE</span>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:13px; color:rgba(242,237,227,0.7); line-height:2;">
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">CURRENCY</span><span>cKES</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">RATE</span><span>1 cUSD = 129.4</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">USED FOR</span><span style="color:#E9A53C;">FX + DCA</span></div>
+        </div>
+      </div>
+      <div style="background:#0E0C0A; padding:clamp(28px,3vw,42px);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:30px;">
+          <span style="font-weight:900; font-size:clamp(24px,2.4vw,34px); letter-spacing:-0.02em;">JOBURG</span>
+          <span style="font-family:'Space Mono',monospace; font-size:12px; color:#34B27B;">ZA</span>
+        </div>
+        <div style="font-family:'Space Mono',monospace; font-size:13px; color:rgba(242,237,227,0.7); line-height:2;">
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">CURRENCY</span><span>cZAR</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">RATE</span><span>1 cUSD = 18.2</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="opacity:0.55;">USED FOR</span><span style="color:#E9A53C;">SAVE + FX</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LIVE FEED / DASHBOARD ===================== -->
+  <section id="feed" data-screen-label="Live feed" style="padding:clamp(70px,9vw,150px) clamp(20px,5vw,80px); border-top:1px solid rgba(242,237,227,0.12);">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:clamp(36px,4vw,56px);">
+      <div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:24px;">/ THE LIVE FEED</div>
+        <h2 style="margin:0; font-weight:900; text-transform:uppercase; font-size:clamp(30px,4.6vw,66px); line-height:0.96; letter-spacing:-0.03em; max-width:18ch;">A public feed of every action, each one provable.</h2>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:14px; align-items:flex-start;">
+        <div style="display:inline-flex; align-items:center; gap:9px; border:1px solid rgba(52,178,123,0.4); background:rgba(52,178,123,0.08); color:#34B27B; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.1em; padding:9px 14px; border-radius:2px;"><span style="width:8px; height:8px; border-radius:50%; background:#34B27B; box-shadow:0 0 10px #34B27B; animation:rr-blink 1.6s infinite;"></span>CIRCUIT BREAKER: ACTIVE</div>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.06em; color:rgba(242,237,227,0.6);">NEXT HEARTBEAT IN <span style="color:#E9A53C;">{{ heartbeat }}</span></div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:minmax(0,1fr); gap:30px;">
+      <!-- by-city -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12); margin-bottom:6px;">
+        <div style="background:#0B0A09; padding:24px;">
+          <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.5);">LAGOS / 24H</div>
+          <div style="font-weight:900; font-size:38px; letter-spacing:-0.03em; margin-top:10px;">{{ cLagos }}</div>
+          <div style="height:4px; background:rgba(242,237,227,0.1); margin-top:14px; border-radius:2px; overflow:hidden;"><div style="height:100%; width:82%; background:#E9A53C;"></div></div>
+        </div>
+        <div style="background:#0B0A09; padding:24px;">
+          <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.5);">NAIROBI / 24H</div>
+          <div style="font-weight:900; font-size:38px; letter-spacing:-0.03em; margin-top:10px;">{{ cNairobi }}</div>
+          <div style="height:4px; background:rgba(242,237,227,0.1); margin-top:14px; border-radius:2px; overflow:hidden;"><div style="height:100%; width:64%; background:#E9A53C;"></div></div>
+        </div>
+        <div style="background:#0B0A09; padding:24px;">
+          <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.5);">JOBURG / 24H</div>
+          <div style="font-weight:900; font-size:38px; letter-spacing:-0.03em; margin-top:10px;">{{ cJoburg }}</div>
+          <div style="height:4px; background:rgba(242,237,227,0.1); margin-top:14px; border-radius:2px; overflow:hidden;"><div style="height:100%; width:48%; background:#E9A53C;"></div></div>
+        </div>
+        <div style="background:#0B0A09; padding:24px;">
+          <div style="font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.5);">GAS / AVG</div>
+          <div style="font-weight:900; font-size:38px; letter-spacing:-0.03em; margin-top:10px; color:#34B27B;">$0.0007</div>
+          <div style="font-family:'Space Mono',monospace; font-size:10px; color:rgba(242,237,227,0.45); margin-top:18px;">PAID IN cUSD</div>
+        </div>
+      </div>
+
+      <!-- recent actions table -->
+      <div style="border:1px solid rgba(242,237,227,0.14);">
+        <div style="display:grid; grid-template-columns:90px 1fr 1.4fr 1fr 110px; gap:12px; padding:14px clamp(16px,2vw,24px); border-bottom:1px solid rgba(242,237,227,0.14); font-family:'Space Mono',monospace; font-size:10.5px; letter-spacing:0.12em; color:rgba(242,237,227,0.45);">
+          <span>TIME</span><span>CITY</span><span>ACTION</span><span>PROOF HASH</span><span style="text-align:right;">STATUS</span>
+        </div>
+        <sc-for list="{{ feed }}" as="row" hint-placeholder-count="6">
+          <div style="display:grid; grid-template-columns:90px 1fr 1.4fr 1fr 110px; gap:12px; padding:16px clamp(16px,2vw,24px); border-bottom:1px solid rgba(242,237,227,0.07); font-family:'Space Mono',monospace; font-size:12.5px; align-items:center;">
+            <span style="color:rgba(242,237,227,0.55);">{{ row.time }}</span>
+            <span style="font-weight:700;">{{ row.city }}</span>
+            <span><span style="color:#E9A53C;">{{ row.action }}</span> <span style="color:rgba(242,237,227,0.7);">{{ row.amount }}</span></span>
+            <span style="color:rgba(242,237,227,0.5);">{{ row.hash }}</span>
+            <span style="text-align:right; color:#34B27B;">{{ row.status }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section id="how" data-screen-label="How it works" style="padding:clamp(70px,9vw,150px) clamp(20px,5vw,80px); border-top:1px solid rgba(242,237,227,0.12); background:#0E0C0A;">
+    <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:24px;">/ HOW IT WORKS</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:clamp(28px,3vw,48px);">
+      <div style="border-top:2px solid #E9A53C; padding-top:26px;">
+        <div style="font-weight:900; font-size:clamp(44px,5vw,80px); line-height:0.9; letter-spacing:-0.04em; color:#E9A53C;">01</div>
+        <h3 style="margin:22px 0 14px; font-weight:800; text-transform:uppercase; font-size:clamp(22px,2vw,30px); letter-spacing:-0.02em;">Connect in MiniPay</h3>
+        <p style="margin:0; font-size:15px; line-height:1.6; color:rgba(242,237,227,0.66);">One tap, no seed phrase, no signing for recurring actions.</p>
+      </div>
+      <div style="border-top:2px solid rgba(242,237,227,0.25); padding-top:26px;">
+        <div style="font-weight:900; font-size:clamp(44px,5vw,80px); line-height:0.9; letter-spacing:-0.04em; color:rgba(242,237,227,0.85);">02</div>
+        <h3 style="margin:22px 0 14px; font-weight:800; text-transform:uppercase; font-size:clamp(22px,2vw,30px); letter-spacing:-0.02em;">Set a rule in plain language</h3>
+        <p style="margin:0 0 14px; font-size:15px; line-height:1.6; color:rgba(242,237,227,0.66);">It reads the rule back to you before anything moves.</p>
+        <div style="font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); line-height:1.9;">"Save 10 percent every Friday."<br>"Keep 40 percent in cKES, rebalance weekly."<br>"Stack 2 dollars of CELO daily."</div>
+      </div>
+      <div style="border-top:2px solid rgba(242,237,227,0.25); padding-top:26px;">
+        <div style="font-weight:900; font-size:clamp(44px,5vw,80px); line-height:0.9; letter-spacing:-0.04em; color:rgba(242,237,227,0.85);">03</div>
+        <h3 style="margin:22px 0 14px; font-weight:800; text-transform:uppercase; font-size:clamp(22px,2vw,30px); letter-spacing:-0.02em;">The agent runs it onchain</h3>
+        <p style="margin:0; font-size:15px; line-height:1.6; color:rgba(242,237,227,0.66);">Every 20 minutes, unattended, bounded by spend caps and a circuit breaker. Watch it happen on the live feed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SAFETY + AGENT ECONOMY ===================== -->
+  <section id="about" data-screen-label="Safety" style="padding:clamp(70px,9vw,150px) clamp(20px,5vw,80px); border-top:1px solid rgba(242,237,227,0.12); display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:clamp(40px,5vw,80px);">
+    <div>
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#34B27B; margin-bottom:24px;">/ SAFETY</div>
+      <h2 style="margin:0 0 22px; font-weight:900; text-transform:uppercase; font-size:clamp(28px,3.4vw,48px); line-height:0.98; letter-spacing:-0.03em;">It moves real money, so it is capped, monitored, and haltable.</h2>
+      <p style="margin:0 0 26px; font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:46ch;">Caps, a circuit breaker, a gas floor, and idempotency. All provable.</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12); font-family:'Space Mono',monospace; font-size:12px;">
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> SPEND CAPS</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> CIRCUIT BREAKER</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> GAS FLOOR</div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> IDEMPOTENCY</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#34B27B; margin-bottom:24px;">/ AGENT ECONOMY</div>
+      <h2 style="margin:0 0 22px; font-weight:900; text-transform:uppercase; font-size:clamp(28px,3.4vw,48px); line-height:0.98; letter-spacing:-0.03em;">Other agents pay RemitRoute, per call.</h2>
+      <p style="margin:0 0 26px; font-size:16px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:46ch;">RemitRoute exposes an FX-route API. Other agents pay per call, settled onchain via x402.</p>
+      <div style="border:1px solid rgba(242,237,227,0.14); padding:24px; font-family:'Space Mono',monospace; font-size:13px; line-height:1.9;">
+        <div style="color:rgba(242,237,227,0.5);">GET /api/fx-route</div>
+        <div><span style="color:#E9A53C;">PRICE</span> &nbsp; $0.01 / call</div>
+        <div><span style="color:#E9A53C;">SETTLE</span> &nbsp; x402 on Celo</div>
+        <div><span style="color:#34B27B;">200</span> &nbsp; { route, rate }</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA / FOOTER ===================== -->
+  <section id="minipay" data-screen-label="CTA" style="border-top:1px solid rgba(242,237,227,0.12); padding:clamp(70px,8vw,130px) clamp(20px,5vw,80px) 0; text-align:center; position:relative; overflow:hidden;">
+    <div style="position:absolute; inset:0; pointer-events:none; background:radial-gradient(60% 80% at 50% 100%, rgba(233,165,60,0.14), transparent 70%);"></div>
+    <div style="position:relative; font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:30px;">READY WHEN YOU ARE</div>
+    <div style="position:relative; display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:clamp(70px,8vw,120px);">
+      <a href="/app" style="display:inline-flex; align-items:center; gap:10px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:16px; padding:18px 28px; text-decoration:none; border-radius:2px;">Open in MiniPay <span style="font-size:18px;">&#8599;</span></a>
+      <a href="/dashboard" style="display:inline-flex; align-items:center; gap:10px; border:1px solid rgba(242,237,227,0.32); color:#F2EDE3; font-weight:700; font-size:16px; padding:17px 26px; text-decoration:none; border-radius:2px;">Watch the live feed</a>
+    </div>
+    <div style="position:relative; font-weight:900; text-transform:uppercase; font-size:clamp(56px,17vw,290px); line-height:0.8; letter-spacing:-0.045em; white-space:nowrap;"><span style="color:#F2EDE3;">REMIT</span><span style="color:#E9A53C;">ROUTE</span></div>
+  </section>
+
+  <footer id="docs" style="border-top:1px solid rgba(242,237,227,0.12); padding:40px clamp(20px,5vw,80px); display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.08em; color:rgba(242,237,227,0.55);">
+    <div style="max-width:60ch; line-height:1.7;">Registered onchain. Reputation tracked onchain. Every transaction verifiable. RemitRoute on Celo mainnet.</div>
+    <div style="display:flex; gap:20px;">
+      <a href="https://agentscan.info" style="color:inherit; text-decoration:none;">AGENTSCAN &#8599;</a>
+      <a href="/docs" style="color:inherit; text-decoration:none;">DOCS &#8599;</a>
+      <a href="https://github.com/OoJae/remitroute" style="color:inherit; text-decoration:none;">GITHUB &#8599;</a>
+    </div>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    clocks: { lagos: '--:--:--', nairobi: '--:--:--', joburg: '--:--:--' },
+    heartbeat: '01:13',
+    cLagos: 31, cNairobi: 24, cJoburg: 18,
+    feed: [
+      { time: '14:02', city: 'LAGOS',   action: 'REMITTANCE',   amount: '5,000 cNGN', hash: '0x9f3a\u2026e21', status: 'SETTLED' },
+      { time: '14:01', city: 'NAIROBI', action: 'FX REBALANCE', amount: 'cUSD \u2192 cKES', hash: '0x71b8\u202604c', status: 'SETTLED' },
+      { time: '13:58', city: 'JOBURG',  action: 'SAVINGS',      amount: '12.0 cUSD \u2192 AAVE', hash: '0x3dd1\u20269af', status: 'SETTLED' },
+      { time: '13:55', city: 'NAIROBI', action: 'DCA',          amount: '$2.00 \u2192 CELO', hash: '0xa42e\u20267b0', status: 'FILLED' },
+      { time: '13:51', city: 'LAGOS',   action: 'WITHDRAWAL',   amount: '8.0 cUSD', hash: '0x2c90\u20261de', status: 'SETTLED' },
+      { time: '13:47', city: 'JOBURG',  action: 'FX REBALANCE', amount: 'cUSD \u2192 cZAR', hash: '0x88f0\u2026b3c', status: 'SETTLED' },
+    ],
+  };
+
+  canvasRef = React.createRef();
+  progressRef = React.createRef();
+  _hbLeft = 73;
+
+  componentDidMount() {
+    this.tickClocks();
+    this._clockTimer = setInterval(() => this.tickClocks(), 1000);
+    this._hbTimer = setInterval(() => this.tickHeartbeat(), 1000);
+    this.setupScroll();
+    this.setupCanvas();
+  }
+  componentWillUnmount() {
+    clearInterval(this._clockTimer);
+    clearInterval(this._hbTimer);
+    cancelAnimationFrame(this._raf);
+    window.removeEventListener('scroll', this._onScroll);
+    window.removeEventListener('resize', this._onResize);
+  }
+
+  tickClocks() {
+    const fmt = (tz) => {
+      try {
+        return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
+      } catch (e) { return '--:--:--'; }
+    };
+    this.setState({ clocks: { lagos: fmt('Africa/Lagos'), nairobi: fmt('Africa/Nairobi'), joburg: fmt('Africa/Johannesburg') } });
+  }
+
+  pad(n) { return String(n).padStart(2, '0'); }
+
+  tickHeartbeat() {
+    this._hbLeft -= 1;
+    if (this._hbLeft <= 0) {
+      this.fireAction();
+      this._hbLeft = 1200;
+    }
+    const m = Math.floor(this._hbLeft / 60), s = this._hbLeft % 60;
+    this.setState({ heartbeat: this.pad(m) + ':' + this.pad(s) });
+  }
+
+  genHash() {
+    const hex = '0123456789abcdef';
+    let a = '', b = '';
+    for (let i = 0; i < 4; i++) a += hex[Math.floor(Math.random() * 16)];
+    for (let i = 0; i < 3; i++) b += hex[Math.floor(Math.random() * 16)];
+    return '0x' + a + '\u2026' + b;
+  }
+
+  fireAction() {
+    const pool = [
+      { city: 'LAGOS',   action: 'REMITTANCE',   amount: '5,000 cNGN', status: 'SETTLED', k: 'cLagos' },
+      { city: 'NAIROBI', action: 'FX REBALANCE', amount: 'cUSD \u2192 cKES', status: 'SETTLED', k: 'cNairobi' },
+      { city: 'JOBURG',  action: 'SAVINGS',      amount: '12.0 cUSD \u2192 AAVE', status: 'SETTLED', k: 'cJoburg' },
+      { city: 'NAIROBI', action: 'DCA',          amount: '$2.00 \u2192 CELO', status: 'FILLED', k: 'cNairobi' },
+      { city: 'LAGOS',   action: 'SAVINGS',      amount: '6.0 cUSD \u2192 AAVE', status: 'SETTLED', k: 'cLagos' },
+      { city: 'JOBURG',  action: 'FX REBALANCE', amount: 'cUSD \u2192 cZAR', status: 'SETTLED', k: 'cJoburg' },
+    ];
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+    const item = { time: now, city: pick.city, action: pick.action, amount: pick.amount, hash: this.genHash(), status: pick.status };
+    this.setState((s) => ({ feed: [item, ...s.feed].slice(0, 7), [pick.k]: s[pick.k] + 1 }));
+  }
+
+  setupScroll() {
+    this._onScroll = () => {
+      const doc = document.documentElement;
+      const max = (doc.scrollHeight - window.innerHeight) || 1;
+      const p = Math.max(0, Math.min(1, window.scrollY / max));
+      if (this.progressRef.current) this.progressRef.current.style.transform = 'scaleX(' + p + ')';
+      this._scrollY = window.scrollY;
+    };
+    window.addEventListener('scroll', this._onScroll, { passive: true });
+  }
+
+  setupCanvas() {
+    const canvas = this.canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let W = 0, H = 0, DPR = 1;
+    const nodes = [
+      { x: 0.14, y: 0.64 }, { x: 0.09, y: 0.40 }, { x: 0.82, y: 0.36 },
+      { x: 0.68, y: 0.80 }, { x: 0.47, y: 0.26 }, { x: 0.90, y: 0.62 },
+    ];
+    const routePairs = [[0, 4], [4, 2], [4, 3], [0, 3], [1, 4], [2, 5], [2, 3], [0, 1]];
+    let arcs = [];
+    const build = () => {
+      const pts = nodes.map((n) => ({ x: n.x * W, y: n.y * H }));
+      arcs = routePairs.map((pr, i) => {
+        const A = pts[pr[0]], B = pts[pr[1]];
+        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+        const dx = B.x - A.x, dy = B.y - A.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = (i % 2 === 0 ? -1 : 1) * len * 0.20;
+        const cx = mx + (-dy / len) * bow, cy = my + (dx / len) * bow;
+        const pulses = [];
+        const count = 2 + (i % 2);
+        for (let k = 0; k < count; k++) pulses.push((k / count) + Math.random() * 0.06);
+        return { A, B, cx, cy, pulses, gold: i % 2 === 0, speed: 0.0013 + (i % 3) * 0.0004 };
+      });
+    };
+    const resize = () => {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      W = canvas.clientWidth; H = canvas.clientHeight;
+      canvas.width = Math.max(1, W * DPR); canvas.height = Math.max(1, H * DPR);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      build();
+    };
+    this._onResize = resize;
+    window.addEventListener('resize', resize);
+    resize();
+
+    const bez = (A, C, B, t) => {
+      const u = 1 - t;
+      return { x: u * u * A.x + 2 * u * t * C.x + t * t * B.x, y: u * u * A.y + 2 * u * t * C.y + t * t * B.y };
+    };
+    const GOLD = '233,165,60', GREEN = '52,178,123';
+
+    const draw = () => {
+      const sy = this._scrollY || 0;
+      const fade = Math.max(0, 1 - sy / (H * 0.9));
+      ctx.clearRect(0, 0, W, H);
+      const off = sy * 0.12;
+
+      // grid dots
+      ctx.fillStyle = 'rgba(242,237,227,' + (0.05 * fade) + ')';
+      const step = 46;
+      for (let x = (off % step); x < W; x += step) {
+        for (let y = ((-off) % step); y < H; y += step) {
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+
+      arcs.forEach((a) => {
+        const col = a.gold ? GOLD : GREEN;
+        const A = { x: a.A.x, y: a.A.y - off }, C = { x: a.cx, y: a.cy - off }, B = { x: a.B.x, y: a.B.y - off };
+        // arc line
+        ctx.beginPath();
+        ctx.moveTo(A.x, A.y);
+        ctx.quadraticCurveTo(C.x, C.y, B.x, B.y);
+        ctx.strokeStyle = 'rgba(' + col + ',' + (0.16 * fade) + ')';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // endpoints
+        [A, B].forEach((p) => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(' + col + ',' + (0.5 * fade) + ')';
+          ctx.fill();
+        });
+        // pulses
+        a.pulses.forEach((t, idx) => {
+          a.pulses[idx] = (t + a.speed) % 1;
+          const p = bez(A, C, B, a.pulses[idx]);
+          ctx.save();
+          ctx.shadowBlur = 14;
+          ctx.shadowColor = 'rgba(' + col + ',' + fade + ')';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(' + col + ',' + (0.95 * fade) + ')';
+          ctx.fill();
+          ctx.restore();
+        });
+      });
+      this._raf = requestAnimationFrame(draw);
+    };
+    this._raf = requestAnimationFrame(draw);
+  }
+
+  renderVals() {
+    const c = this.state.clocks;
+    return {
+      canvasRef: this.canvasRef,
+      progressRef: this.progressRef,
+      lagos: c.lagos, nairobi: c.nairobi, joburg: c.joburg,
+      heartbeat: this.state.heartbeat,
+      cLagos: this.state.cLagos, cNairobi: this.state.cNairobi, cJoburg: this.state.cJoburg,
+      feed: this.state.feed,
+    };
+  }
+}
+</script>
+</body>
+</html>

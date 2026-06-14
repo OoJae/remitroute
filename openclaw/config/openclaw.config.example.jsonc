@@ -1,0 +1,37 @@
+// Example OpenClaw gateway config for the RemitRoute agent.
+// Copy into the gateway config location on the VPS (typically ~/.openclaw/config)
+// and fill the model provider credentials. Confirm exact keys against the live
+// OpenClaw docs before deploy; this matches the agents config surface as of the
+// research on 2026-06-11.
+{
+  "agents": {
+    "defaults": {
+      // The agent reads its bootstrap files (including HEARTBEAT.md) from here.
+      // Symlink or copy this repo's openclaw/ contents into the workspace, or
+      // point the workspace at the repo's openclaw directory.
+      "workspace": "~/.openclaw/workspace",
+
+      // Wake every 20 minutes for activity density without burning gas.
+      "heartbeat": {
+        "every": "20m",
+        "includeSystemPromptSection": true
+      },
+
+      // Model is selectable. Keep Kimi K2.5 or switch to Claude. Fill credentials
+      // via the provider config or environment, not in this file.
+      "model": "moonshot/kimi-k2.5",
+
+      // Skills this agent is allowed to load. These names match the skill
+      // directories under openclaw/skills.
+      "skills": [
+        "fee-abstraction",
+        "transfer",
+        "mento-fx",
+        "yield",
+        "remitroute-core",
+        "erc8004",
+        "x402-service"
+      ]
+    }
+  }
+}

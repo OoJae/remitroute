@@ -1,0 +1,20 @@
+# Public cloudflared quick-tunnel for the RemitRoute Mini App + APIs (port 3200).
+# Managed by systemd so it survives crashes and reboots (the prior tunnel was an
+# unmanaged bare process). A trycloudflare quick tunnel gets a NEW URL on each
+# (re)start, so after a restart run refresh-public-url.ts to re-sync APP_BASE_URL
+# and the onchain ERC-8004 agentURI. Install to /etc/systemd/system/ on the VPS.
+
+[Unit]
+Description=RemitRoute public cloudflared tunnel (port 3200)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3200
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

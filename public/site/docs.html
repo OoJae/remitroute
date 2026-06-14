@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/site/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#0B0A09; }
+  body{ -webkit-font-smoothing:antialiased; }
+  ::selection{ background:#E9A53C; color:#0B0A09; }
+  a.doc-link:hover{ color:#E9A53C !important; }
+
+  /* ---- mobile optimisation (added) ---- */
+  html,body{ overflow-x:hidden; max-width:100%; }
+  @media (max-width:1024px), (pointer:coarse){
+    [style*="grid-template-columns:160px 1fr 1.3fr"],
+    [style*="grid-template-columns:200px 1fr"],
+    [style*="grid-template-columns:120px 1fr"],
+    [style*="grid-template-columns:248px minmax(0,1fr)"],
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="grid-template-columns:repeat(auto-fit"]{ grid-template-columns:1fr !important; }
+    [style*="grid-template-columns:90px 1fr 1.4fr 1fr 110px"]{ display:flex !important; flex-wrap:wrap; gap:4px 12px; }
+    [style*="17vw"]{ font-size:clamp(34px,12vw,200px) !important; }
+    nav{ flex-wrap:wrap; row-gap:10px; }
+    nav > div[style*="Space Mono"]{ order:3; flex-basis:100%; justify-content:center; display:flex; }
+    nav[style*="mix-blend-mode"]{ position:sticky !important; mix-blend-mode:normal !important; background:rgba(11,10,9,0.92) !important; backdrop-filter:blur(10px); border-bottom:1px solid rgba(242,237,227,0.12); align-items:center !important; }
+    nav[style*="mix-blend-mode"] > div:nth-child(2){ display:none !important; }
+    nav[style*="mix-blend-mode"] > div:last-child > div{ display:none !important; }
+    [style*="animation:rr-float"]{ display:none !important; }
+  }
+</style>
+</helmet>
+
+<div style="background:#0B0A09; color:#F2EDE3; font-family:'Archivo',system-ui,sans-serif;">
+
+  <!-- NAV -->
+  <nav style="position:sticky; top:0; z-index:60; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px clamp(20px,4vw,52px); border-bottom:1px solid rgba(242,237,227,0.14); background:rgba(11,10,9,0.92); backdrop-filter:blur(10px);">
+    <a href="/" style="display:flex; align-items:center; gap:11px; text-decoration:none;">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="flex:none;"><circle cx="6" cy="25" r="3.4" stroke="#E9A53C" stroke-width="2"></circle><circle cx="26" cy="7" r="3.4" stroke="#E9A53C" stroke-width="2"></circle><path d="M7.6 22.6 C 16 16, 12 9, 24.2 9.2" stroke="#E9A53C" stroke-width="2" stroke-linecap="round"></path><circle cx="16.2" cy="13.4" r="2.6" fill="#34B27B"></circle></svg>
+      <span style="font-weight:900; font-size:15px; letter-spacing:-0.01em; color:#F2EDE3;">REMIT<span style="color:#E9A53C;">ROUTE</span></span>
+      <span style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.14em; color:rgba(242,237,227,0.45); padding-left:12px; border-left:1px solid rgba(242,237,227,0.16); margin-left:4px;">DOCS</span>
+    </a>
+    <div style="display:flex; gap:clamp(14px,2vw,28px); font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.12em; color:rgba(242,237,227,0.7);">
+      <a href="/how-it-works" style="color:inherit; text-decoration:none;">HOW IT WORKS</a>
+      <a href="/dashboard" style="color:inherit; text-decoration:none;">DASHBOARD</a>
+      <a href="/about" style="color:inherit; text-decoration:none;">ABOUT</a>
+    </div>
+    <a href="/app" style="display:inline-flex; align-items:center; gap:8px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:12px; padding:10px 15px; text-decoration:none; border-radius:2px;">OPEN IN MINIPAY <span style="font-size:14px;">&#8599;</span></a>
+  </nav>
+
+  <div style="display:grid; grid-template-columns:248px minmax(0,1fr); align-items:start;">
+
+    <!-- SIDEBAR -->
+    <aside style="position:sticky; top:65px; align-self:start; border-right:1px solid rgba(242,237,227,0.12); padding:clamp(30px,3vw,44px) 24px; height:calc(100vh - 65px); overflow:auto;">
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.14em; color:rgba(242,237,227,0.4); margin-bottom:14px;">GETTING STARTED</div>
+      <div style="display:flex; flex-direction:column; gap:11px; font-family:'Space Mono',monospace; font-size:12.5px; margin-bottom:30px;">
+        <a class="doc-link" href="#quickstart" style="color:rgba(242,237,227,0.75); text-decoration:none;">Quickstart</a>
+        <a class="doc-link" href="#concepts" style="color:rgba(242,237,227,0.75); text-decoration:none;">Core concepts</a>
+      </div>
+      <div style="font-family:'Space Mono',monospace; font-size:10px; letter-spacing:0.14em; color:rgba(242,237,227,0.4); margin-bottom:14px;">REFERENCE</div>
+      <div style="display:flex; flex-direction:column; gap:11px; font-family:'Space Mono',monospace; font-size:12.5px; margin-bottom:30px;">
+        <a class="doc-link" href="#rules" style="color:rgba(242,237,227,0.75); text-decoration:none;">Rule types</a>
+        <a class="doc-link" href="#api" style="color:rgba(242,237,227,0.75); text-decoration:none;">x402 FX-route API</a>
+        <a class="doc-link" href="#addresses" style="color:rgba(242,237,227,0.75); text-decoration:none;">Onchain addresses</a>
+        <a class="doc-link" href="#safety" style="color:rgba(242,237,227,0.75); text-decoration:none;">Safety + caps</a>
+      </div>
+      <div style="border:1px solid rgba(52,178,123,0.35); background:rgba(52,178,123,0.06); border-radius:4px; padding:14px; font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; line-height:1.6;"><span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:6px; height:6px; border-radius:50%; background:#34B27B;"></span>AGENT LIVE</span><br>ERC-8004 #9308</div>
+    </aside>
+
+    <!-- CONTENT -->
+    <main style="padding:clamp(40px,5vw,80px) clamp(24px,5vw,90px); max-width:920px;">
+
+      <div style="font-family:'Space Mono',monospace; font-size:12px; letter-spacing:0.18em; color:#E9A53C; margin-bottom:20px;">/ DOCUMENTATION</div>
+      <h1 style="margin:0 0 18px; font-weight:900; text-transform:uppercase; font-size:clamp(38px,6vw,80px); line-height:0.86; letter-spacing:-0.035em;">Build on the route</h1>
+      <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:rgba(242,237,227,0.7); max-width:60ch;">Everything you need to use RemitRoute as a person, or pay it as another agent. No em dashes, just hyphens. This is real money on Celo mainnet, so every value here is verifiable.</p>
+
+      <!-- QUICKSTART -->
+      <h2 id="quickstart" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">Quickstart</h2>
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; border:1px solid rgba(242,237,227,0.14); padding:18px 20px;"><span style="font-family:'Space Mono',monospace; color:#E9A53C; font-size:14px;">01</span><div><div style="font-weight:700; font-size:16px;">Open RemitRoute in MiniPay</div><div style="font-size:14px; color:rgba(242,237,227,0.6); margin-top:4px;">It detects the wallet and auto-connects. No connect button.</div></div></div>
+        <div style="display:flex; gap:16px; align-items:flex-start; border:1px solid rgba(242,237,227,0.14); padding:18px 20px;"><span style="font-family:'Space Mono',monospace; color:#E9A53C; font-size:14px;">02</span><div><div style="font-weight:700; font-size:16px;">Set a rule</div><div style="font-size:14px; color:rgba(242,237,227,0.6); margin-top:4px;">Type it plainly, for example "save 10 percent every Friday". Confirm the parsed rule.</div></div></div>
+        <div style="display:flex; gap:16px; align-items:flex-start; border:1px solid rgba(242,237,227,0.14); padding:18px 20px;"><span style="font-family:'Space Mono',monospace; color:#E9A53C; font-size:14px;">03</span><div><div style="font-weight:700; font-size:16px;">Fund the automation wallet</div><div style="font-size:14px; color:rgba(242,237,227,0.6); margin-top:4px;">Sign one cUSD transfer. The agent runs everything after that. Withdraw any time.</div></div></div>
+      </div>
+
+      <!-- CONCEPTS -->
+      <h2 id="concepts" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">Core concepts</h2>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12);">
+        <div style="background:#0B0A09; padding:24px;"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.08em;">EXECUTION WALLET</div><p style="margin:12px 0 0; font-size:14px; line-height:1.55; color:rgba(242,237,227,0.65);">A dedicated automation wallet the agent runs from. You fund it and can withdraw any time.</p></div>
+        <div style="background:#0B0A09; padding:24px;"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.08em;">SCHEDULE</div><p style="margin:12px 0 0; font-size:14px; line-height:1.55; color:rgba(242,237,227,0.65);">A rule with a kind, params, a cadence, and a next-run time. Stored as the source of truth.</p></div>
+        <div style="background:#0B0A09; padding:24px;"><div style="font-family:'Space Mono',monospace; font-size:11px; color:#34B27B; letter-spacing:0.08em;">HEARTBEAT</div><p style="margin:12px 0 0; font-size:14px; line-height:1.55; color:rgba(242,237,227,0.65);">The 20-minute loop that wakes the agent, runs due schedules, and posts metrics onchain.</p></div>
+      </div>
+
+      <!-- RULE TYPES -->
+      <h2 id="rules" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">Rule types</h2>
+      <div style="border:1px solid rgba(242,237,227,0.14); font-family:'Space Mono',monospace; font-size:13px; overflow-x:auto;">
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:13px 18px; border-bottom:1px solid rgba(242,237,227,0.14); font-size:10.5px; letter-spacing:0.1em; color:rgba(242,237,227,0.45); min-width:560px;"><span>KIND</span><span>PARAMS</span><span>EXAMPLE</span></div>
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:15px 18px; border-bottom:1px solid rgba(242,237,227,0.07); min-width:560px;"><span style="color:#E9A53C;">savings_sweep</span><span style="color:rgba(242,237,227,0.6);">percent, cadence, venue</span><span style="color:rgba(242,237,227,0.8);">10% idle cUSD &#8594; Aave, Fridays</span></div>
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:15px 18px; border-bottom:1px solid rgba(242,237,227,0.07); min-width:560px;"><span style="color:#E9A53C;">fx_rebalance</span><span style="color:rgba(242,237,227,0.6);">target_weights, threshold</span><span style="color:rgba(242,237,227,0.8);">40% cKES, rebalance weekly</span></div>
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:15px 18px; border-bottom:1px solid rgba(242,237,227,0.07); min-width:560px;"><span style="color:#E9A53C;">remittance</span><span style="color:rgba(242,237,227,0.6);">to, amount, token, date</span><span style="color:rgba(242,237,227,0.8);">5,000 cNGN on the 1st</span></div>
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:15px 18px; border-bottom:1px solid rgba(242,237,227,0.07); min-width:560px;"><span style="color:#E9A53C;">dca</span><span style="color:rgba(242,237,227,0.6);">amount, asset, cadence</span><span style="color:rgba(242,237,227,0.8);">$2 CELO daily</span></div>
+        <div style="display:grid; grid-template-columns:160px 1fr 1.3fr; gap:12px; padding:15px 18px; min-width:560px;"><span style="color:#E9A53C;">withdrawal</span><span style="color:rgba(242,237,227,0.6);">amount, to</span><span style="color:rgba(242,237,227,0.8);">return funds to MiniPay wallet</span></div>
+      </div>
+
+      <!-- API -->
+      <h2 id="api" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">x402 FX-route API</h2>
+      <p style="margin:0 0 20px; font-size:15px; line-height:1.6; color:rgba(242,237,227,0.66); max-width:60ch;">Other agents pay RemitRoute per call for an optimal FX route and live rate. Each request settles onchain via x402 on Celo.</p>
+      <div style="border:1px solid rgba(242,237,227,0.14); background:#0E0C0A; font-family:'Space Mono',monospace; font-size:13px;">
+        <div style="display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid rgba(242,237,227,0.14);"><span style="background:#34B27B; color:#062a1c; font-weight:700; padding:3px 8px; border-radius:3px; font-size:11px;">GET</span><span style="color:#F2EDE3;">/api/fx-route</span><span style="margin-left:auto; color:#E9A53C;">$0.01 / call</span></div>
+        <div style="padding:18px; line-height:1.9; color:rgba(242,237,227,0.8); overflow-x:auto;">
+          <div style="color:rgba(242,237,227,0.45);"># request</div>
+          <div>curl -H "X-PAYMENT: &lt;sig&gt;" \</div>
+          <div style="padding-left:20px;">https://remitroute.xyz/api/fx-route?from=cUSD&amp;to=cKES</div>
+          <div style="margin-top:14px; color:rgba(242,237,227,0.45);"># 200 OK</div>
+          <div>{</div>
+          <div style="padding-left:20px;">"route": ["cUSD","cKES"],</div>
+          <div style="padding-left:20px;">"rate": <span style="color:#34B27B;">129.41</span>,</div>
+          <div style="padding-left:20px;">"slippageBps": 50,</div>
+          <div style="padding-left:20px;">"settled": <span style="color:#34B27B;">true</span></div>
+          <div>}</div>
+        </div>
+      </div>
+
+      <!-- ADDRESSES -->
+      <h2 id="addresses" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">Onchain addresses</h2>
+      <p style="margin:0 0 20px; font-family:'Space Mono',monospace; font-size:12px; color:rgba(242,237,227,0.5); letter-spacing:0.04em;">CELO MAINNET / CHAIN ID 42220</p>
+      <div style="border:1px solid rgba(242,237,227,0.14); font-family:'Space Mono',monospace; font-size:12.5px; overflow-x:auto;">
+        <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; padding:14px 18px; border-bottom:1px solid rgba(242,237,227,0.08); min-width:540px;"><span style="color:rgba(242,237,227,0.5);">USDC</span><span style="color:#F2EDE3;">0xcebA9300f2b948710d2653dD7B07f33A8B32118C</span></div>
+        <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; padding:14px 18px; border-bottom:1px solid rgba(242,237,227,0.08); min-width:540px;"><span style="color:rgba(242,237,227,0.5);">USDC adapter (gas)</span><span style="color:#F2EDE3;">0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B</span></div>
+        <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; padding:14px 18px; border-bottom:1px solid rgba(242,237,227,0.08); min-width:540px;"><span style="color:rgba(242,237,227,0.5);">cUSD</span><span style="color:#F2EDE3;">0x765DE816845861e75A25fCA122bb6898B8B1282a</span></div>
+        <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; padding:14px 18px; border-bottom:1px solid rgba(242,237,227,0.08); min-width:540px;"><span style="color:rgba(242,237,227,0.5);">ERC-8004 Identity</span><span style="color:#E9A53C;">0x8004A169FB4a3325136EB29fA0ceB6D2e539a432</span></div>
+        <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; padding:14px 18px; min-width:540px;"><span style="color:rgba(242,237,227,0.5);">ERC-8004 Reputation</span><span style="color:#E9A53C;">0x8004BAa17C55a88189AE136b182e5fdA19dE9b63</span></div>
+      </div>
+      <p style="margin:16px 0 0; font-family:'Space Mono',monospace; font-size:11px; color:rgba(242,237,227,0.4); line-height:1.7;">Mento Broker, exchange IDs, local-currency stablecoins, and the Aave V3 Pool are resolved at runtime. Verify every address on Celoscan before use.</p>
+
+      <!-- SAFETY -->
+      <h2 id="safety" style="scroll-margin-top:90px; margin:clamp(50px,6vw,80px) 0 20px; font-weight:900; text-transform:uppercase; font-size:clamp(24px,3vw,40px); letter-spacing:-0.025em; padding-top:22px; border-top:1px solid rgba(242,237,227,0.12);">Safety + caps</h2>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1px; background:rgba(242,237,227,0.12); border:1px solid rgba(242,237,227,0.12); font-family:'Space Mono',monospace; font-size:13px;">
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> SPEND CAPS <div style="font-size:11px; color:rgba(242,237,227,0.5); margin-top:8px;">Per-user and global, every cycle.</div></div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> CIRCUIT BREAKER <div style="font-size:11px; color:rgba(242,237,227,0.5); margin-top:8px;">Halts on anomaly.</div></div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> GAS FLOOR <div style="font-size:11px; color:rgba(242,237,227,0.5); margin-top:8px;">Never drains the buffer.</div></div>
+        <div style="background:#0B0A09; padding:18px;"><span style="color:#34B27B;">&#10003;</span> IDEMPOTENCY <div style="font-size:11px; color:rgba(242,237,227,0.5); margin-top:8px;">No double execution.</div></div>
+      </div>
+
+      <div style="margin-top:clamp(50px,6vw,80px); padding-top:28px; border-top:1px solid rgba(242,237,227,0.12); display:flex; gap:14px; flex-wrap:wrap;">
+        <a href="/app" style="display:inline-flex; align-items:center; gap:10px; background:#E9A53C; color:#0B0A09; font-weight:800; font-size:15px; padding:15px 22px; text-decoration:none; border-radius:2px;">Open in MiniPay <span style="font-size:17px;">&#8599;</span></a>
+        <a href="/" style="display:inline-flex; align-items:center; gap:10px; border:1px solid rgba(242,237,227,0.3); color:#F2EDE3; font-weight:700; font-size:15px; padding:14px 20px; text-decoration:none; border-radius:2px;">&#8592; Back to RemitRoute</a>
+      </div>
+
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

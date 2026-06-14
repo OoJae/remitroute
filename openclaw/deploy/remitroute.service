@@ -1,0 +1,29 @@
+# systemd unit for the OpenClaw gateway running the RemitRoute agent on the VPS.
+# Install: copy to /etc/systemd/system/remitroute.service, then
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now remitroute
+# Confirm the gateway binary path and flags against the live OpenClaw docs.
+
+[Unit]
+Description=RemitRoute OpenClaw agent gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remitroute
+WorkingDirectory=/home/remitroute/remitroute
+# EnvironmentFile holds DATABASE_URL, AGENT_PRIVATE_KEY, ENCRYPTION_KEY, etc.
+# Keep this file at 0600, owned by the service user, outside the repo.
+EnvironmentFile=/home/remitroute/remitroute.env
+ExecStart=/usr/local/bin/openclaw gateway --config /home/remitroute/.openclaw/config
+Restart=on-failure
+RestartSec=10
+# Hardening: the hot wallet holds only working funds.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/remitroute/.openclaw
+
+[Install]
+WantedBy=multi-user.target

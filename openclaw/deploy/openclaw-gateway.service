@@ -1,0 +1,21 @@
+# OpenClaw gateway daemon. Serves all configured agents in one gateway; only the
+# remitroute agent has a heartbeat, so only it wakes on a timer. The main agent
+# stays idle (no heartbeat configured). Confirm the exact start command against
+# `openclaw gateway --help` before installing. Install to /etc/systemd/system/.
+
+[Unit]
+Description=OpenClaw gateway (serves the remitroute agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/openclaw gateway
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
