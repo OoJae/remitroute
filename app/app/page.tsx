@@ -132,6 +132,28 @@ export default function Home() {
     })();
   }, [isConnected, address, onboard]);
 
+  // When the connected MiniPay wallet changes (the user switches accounts),
+  // drop all per-user state so nothing from the previous account leaks into the
+  // new one. Clearing onboard re-triggers the onboard effect above for the new
+  // address, which reloads that account's own rules, activity, and balances.
+  useEffect(() => {
+    setOnboard(null);
+    setActivity([]);
+    setRules([]);
+    setBalances([]);
+    setCity("");
+    setCountry("");
+    setProfileSaved(false);
+    setRuleText("");
+    setParsedRule(null);
+    setRecipientAddr("");
+    setStatus("");
+    setRuleStatus("");
+    setWithdrawStatus("");
+    setProfileStatus("");
+    setRulesStatus("");
+  }, [address]);
+
   // Load this user's activity.
   const loadActivity = useCallback(async (userId: string) => {
     const res = await fetch(`/api/executions?user=${userId}`);
@@ -198,7 +220,14 @@ export default function Home() {
       // Give the node a moment, then refresh the balance.
       setTimeout(() => void loadBalances(onboard.userId), 4000);
     } catch (err) {
-      setStatus(`Funding cancelled or failed: ${(err as Error).message}`);
+      const m = ((err as Error)?.message ?? "").toLowerCase();
+      if (m.includes("exceeds balance") || m.includes("insufficient")) {
+        setStatus("You do not have enough cUSD in your MiniPay wallet. Add cUSD, then try again.");
+      } else if (m.includes("denied") || m.includes("rejected")) {
+        setStatus("Funding cancelled.");
+      } else {
+        setStatus("Could not fund the wallet. Please try again.");
+      }
     }
   }, [onboard, address, fundAmount, loadBalances]);
 
@@ -236,8 +265,12 @@ export default function Home() {
       setWithdrawAmount("");
       void loadBalances(onboard.userId);
       void loadActivity(onboard.userId);
+    } else if (body.status === "skipped_empty") {
+      setWithdrawStatus("Your automation wallet is empty, nothing to withdraw.");
+    } else if (body.status === "reverted") {
+      setWithdrawStatus("The withdrawal reverted onchain. Please try again.");
     } else {
-      setWithdrawStatus(body.error ?? `Withdraw failed (${body.status ?? res.status}).`);
+      setWithdrawStatus(body.error ?? "Could not withdraw. Please try again.");
     }
   }, [onboard, withdrawToken, withdrawAmount, loadBalances, loadActivity]);
 

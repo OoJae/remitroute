@@ -13,7 +13,7 @@ import {
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  minipayAddress: text("minipay_address"),
+  minipayAddress: text("minipay_address").unique(),
   telegramId: text("telegram_id").unique(),
   displayName: text("display_name"),
   city: text("city"),

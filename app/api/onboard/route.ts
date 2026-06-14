@@ -52,9 +52,24 @@ export async function POST(request: Request) {
       walletAddress: wallet.address,
       walletKeyRef: wallet.keyRef,
     })
+    // One automation wallet per MiniPay address. If a concurrent onboard for the
+    // same address won the race, the insert is a no-op and we return that user.
+    .onConflictDoNothing({ target: users.minipayAddress })
     .returning();
 
   if (!created) {
+    const [winner] = await db
+      .select()
+      .from(users)
+      .where(eq(users.minipayAddress, minipayAddress));
+    if (winner) {
+      return NextResponse.json({
+        userId: winner.id,
+        executionWallet: winner.walletAddress,
+        city: winner.city,
+        displayName: winner.displayName,
+      });
+    }
     return NextResponse.json({ error: "could not create user" }, { status: 500 });
   }
 
