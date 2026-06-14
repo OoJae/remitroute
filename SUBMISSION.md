@@ -7,12 +7,12 @@ runs your savings, FX, and remittances automatically, with gas paid in stablecoi
 
 ## Links
 
-- **Live app (MiniPay Mini App):** `<LIVE_URL>/app`
-- **Landing:** `<LIVE_URL>`
-- **Public live dashboard:** `<LIVE_URL>/dashboard`
-- **ERC-8004 agent #9308 (agentscan):** `<AGENTSCAN_URL>`
-- **Machine-readable registration:** `<LIVE_URL>/.well-known/agent.json`
-- **x402 paid FX-route API:** `<LIVE_URL>/api/fx-route`
+- **Live app (MiniPay Mini App):** `https://remitroute.vercel.app/app`
+- **Landing:** `https://remitroute.vercel.app`
+- **Public live dashboard:** `https://remitroute.vercel.app/dashboard`
+- **ERC-8004 agent #9308 (agentscan):** `https://agentscan.info/agents/9308`
+- **Machine-readable registration:** `https://remitroute.vercel.app/.well-known/agent.json`
+- **x402 paid FX-route API:** `https://remitroute.vercel.app/api/fx-route`
 - **Code (GitHub):** https://github.com/OoJae/remitroute
 
 ## The problem
@@ -83,10 +83,10 @@ deployed serverless; the heartbeat engine runs as a deterministic systemd timer.
 
 ## 60-second demo
 
-1. Open `<LIVE_URL>/app` in MiniPay. It auto-connects, no signing.
+1. Open `https://remitroute.vercel.app/app` in MiniPay. It auto-connects, no signing.
 2. Fund the automation wallet with a little cUSD.
 3. Type a rule: "Save 10 percent every Friday." The agent reads it back, you confirm.
-4. Open `<LIVE_URL>/dashboard` to watch the live feed: actions by city, the circuit-breaker
+4. Open `https://remitroute.vercel.app/dashboard` to watch the live feed: actions by city, the circuit-breaker
    status, and a proof hash per action.
 5. The agent keeps running it onchain on its heartbeat, gas in cUSD, forever.
 
@@ -96,11 +96,11 @@ Primary:
 
 > RemitRoute is live on @Celo. Set one rule in MiniPay (save 10% every Friday, send
 > cNGN on the 1st, keep 40% in cKES) and an onchain agent runs it forever, gas paid in
-> stablecoins. ERC-8004 agent #9308. Built for Lagos, Nairobi, Joburg. <LIVE_URL>
+> stablecoins. ERC-8004 agent #9308. Built for Lagos, Nairobi, Joburg. https://remitroute.vercel.app
 > @CeloDevs
 
 Alternate:
 
 > Your money should move on its own. RemitRoute is an always-on agent on @Celo doing
 > recurring savings, FX, and remittances for everyday users, non-custodial, gas in
-> cUSD, every action proof-stamped onchain. ERC-8004 #9308. <LIVE_URL> @CeloDevs
+> cUSD, every action proof-stamped onchain. ERC-8004 #9308. https://remitroute.vercel.app @CeloDevs

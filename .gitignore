@@ -16,3 +16,4 @@ build/
 coverage/
 .turbo/
 .vercel/
+.vercel

@@ -13,7 +13,7 @@ recurring actions. Funds stay in the user's own execution wallet, withdrawable a
 Built for everyday users in Lagos, Nairobi, and Johannesburg, where MiniPay adoption
 is growing fastest.
 
-- **Live:** see the deployed URL in the project description / submission.
+- **Live:** https://remitroute.vercel.app
 - **Onchain identity:** ERC-8004 agent **#9308** on Celo mainnet (chainId 42220), verifiable on agentscan.
 - **Network:** Celo mainnet. Non-custodial. Gas paid in cUSD.
 
