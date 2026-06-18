@@ -1,13 +1,14 @@
-# Fires the RemitRoute money engine every 2 minutes. Install to
-# /etc/systemd/system/ on the VPS, then: systemctl enable --now remitroute-heartbeat.timer
+# Fires the RemitRoute money engine every 20 minutes (the product default).
+# Install to /etc/systemd/system/ on the VPS, then:
+# systemctl enable --now remitroute-heartbeat.timer
 
 [Unit]
-Description=RemitRoute heartbeat timer (every 2 minutes)
+Description=RemitRoute heartbeat timer (every 20 minutes)
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=2min
-RandomizedDelaySec=10
+OnUnitActiveSec=20min
+RandomizedDelaySec=60
 Unit=remitroute-heartbeat.service
 Persistent=true
 
