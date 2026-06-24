@@ -103,11 +103,6 @@ the typed, capped scripts and the circuit breaker.
 - `tsx openclaw/skills/remitroute-core/scripts/verify-safety.ts` asserts caps, gas floor,
   idempotency, and the anomaly halt.
 
-## Hard rules
-
-- No em dashes anywhere, including code, comments, and UI copy.
-- This moves real money on mainnet. Caps stay live, amounts stay tiny, keys are encrypted
-  at rest, and `.env` is never committed.
 
 ## License
 
