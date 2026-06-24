@@ -11,6 +11,20 @@ const nextConfig = {
   // ahead of filesystem + dynamic routes, so "/" maps to the landing page now
   // that the functional MiniPay app lives at "/app". The React routes "/app"
   // and "/dashboard" are NOT rewritten and keep working as real pages.
+  // Do not leak the session-bearing path (or any URL) to third parties via the
+  // Referer header, and stop content-type sniffing. No X-Frame-Options so the
+  // MiniPay webview can still embed the Mini App.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return {
       beforeFiles: [

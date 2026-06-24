@@ -6,7 +6,7 @@
 //
 // Run: tsx openclaw/skills/remitroute-core/scripts/run-due.ts
 import { erc20Abi, formatUnits } from "viem";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, lt, sql } from "drizzle-orm";
 import { db, pool } from "../../../../shared/db/client.js";
 import { schedules, executions, users } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
@@ -28,9 +28,42 @@ import { withdraw } from "../../yield/scripts/withdraw.js";
 import { rebalance } from "./rebalance.js";
 import { postMetrics } from "../../erc8004/scripts/post-metrics.js";
 import { reschedule } from "./reschedule.js";
-import { getEngineState, haltEngine, recordCycle, evaluateAnomaly } from "../../../../shared/engine.js";
+import {
+  getEngineState,
+  haltEngine,
+  resumeEngine,
+  recordCycle,
+  evaluateAnomaly,
+} from "../../../../shared/engine.js";
+import { notify } from "../../../../shared/alerts.js";
 
 const TRANSFER_KINDS = new Set(["remittance", "bill_drip"]);
+
+type Outcome = "ok" | "skipped" | "failed" | "reverted" | "unknown";
+
+// Classify a money-script result and update the cycle summary. "unknown" is a
+// broadcast whose fate we could not confirm: it is NOT counted as a failure (so
+// it cannot trip the breaker) and is NEVER retried (so it cannot double-send).
+// "reverted" is a real onchain revert (counts as a failure, but not retried
+// since a deterministic revert will just fail again).
+function account(summary: CycleSummary, status: string, volume: number): Outcome {
+  if (status === "confirmed" || status === "success" || status === "dry_run") {
+    summary.succeeded += 1;
+    summary.volume += volume;
+    return "ok";
+  }
+  if (status === "broadcast_unknown") return "unknown";
+  if (status === "reverted") {
+    summary.failed += 1;
+    return "reverted";
+  }
+  if (status.startsWith("skipped")) {
+    summary.skipped += 1;
+    return "skipped";
+  }
+  summary.failed += 1;
+  return "failed";
+}
 
 // Below this many whole units, a computed sweep amount is treated as dust.
 const DUST = 0.000001;
@@ -73,14 +106,37 @@ export async function runDue(): Promise<CycleSummary> {
     aborted: false,
   };
 
-  // Guardian 9 circuit breaker: if the engine is halted, move no money this
-  // cycle. It stays halted until an operator clears it (engine-control --resume).
+  // Guardian 9 circuit breaker. If halted, move no money this cycle. Half-open
+  // recovery: if it has been halted longer than the cooldown, auto-resume and
+  // probe this cycle instead of staying wedged forever (a one-off burst should
+  // not require a human). A persistent problem just re-trips the breaker.
   const engine = await getEngineState();
   if (engine.status === "halted") {
-    summary.aborted = true;
-    log.warn({ cycleId, reason: engine.haltReason }, "cycle skipped: engine halted");
-    await recordCycle(summary, true);
-    return summary;
+    const cooldownMs = config.ANOMALY_HALT_COOLDOWN_MIN * 60 * 1000;
+    const haltedFor = engine.haltedAt ? Date.now() - engine.haltedAt.getTime() : Infinity;
+    if (haltedFor >= cooldownMs) {
+      await resumeEngine();
+      await notify("engine auto-resumed after cooldown (half-open probe)", { haltedFor });
+      log.warn({ cycleId, haltedFor }, "engine auto-resumed (half-open)");
+    } else {
+      summary.aborted = true;
+      log.warn({ cycleId, reason: engine.haltReason }, "cycle skipped: engine halted");
+      await recordCycle(summary, true);
+      return summary;
+    }
+  }
+
+  // Reclaim sweep: a schedule stuck in "processing" (a crash/SIGTERM mid-cycle)
+  // is returned to active so it is not wedged forever; the due loader only sees
+  // active rows.
+  const staleBefore = new Date(Date.now() - config.RECLAIM_STALE_MIN * 60 * 1000);
+  const reclaimed = await db
+    .update(schedules)
+    .set({ status: "active" })
+    .where(and(eq(schedules.status, "processing"), lt(schedules.claimedAt, staleBefore)))
+    .returning();
+  if (reclaimed.length > 0) {
+    log.warn({ cycleId, count: reclaimed.length }, "reclaimed stale processing schedules");
   }
 
   // Guardian 1 mini: gas buffer. In real mode a fail aborts the cycle so the
@@ -108,7 +164,7 @@ export async function runDue(): Promise<CycleSummary> {
     // runner already claimed it, this returns no row and we skip.
     const claimed = await db
       .update(schedules)
-      .set({ status: "processing" })
+      .set({ status: "processing", claimedAt: new Date() })
       .where(
         and(
           eq(schedules.id, candidate.id),
@@ -120,7 +176,7 @@ export async function runDue(): Promise<CycleSummary> {
     if (claimed.length === 0) continue;
     const sch = claimed[0]!;
     summary.attempted += 1;
-    let outcome: "ok" | "skipped" | "failed" = "ok";
+    let outcome: Outcome = "ok";
 
     try {
       if (TRANSFER_KINDS.has(sch.kind)) {
@@ -133,8 +189,11 @@ export async function runDue(): Promise<CycleSummary> {
           const idle = await readIdleBalance(u.walletAddress, params.token);
           if (idle < Number(params.amount)) {
             try {
-              log.info({ scheduleId: sch.id, idle, need: params.amount }, "remittance funds short; withdrawing from yield first");
-              await withdraw({ user: sch.userId!, asset: params.token, amount: "max", scheduleId: sch.id, cycleId });
+              // Top up only the shortfall (plus a tiny buffer), not the whole
+              // yield position, to cover this transfer.
+              const shortfall = (Number(params.amount) - idle + 0.001).toFixed(6);
+              log.info({ scheduleId: sch.id, idle, need: params.amount, shortfall }, "remittance funds short; topping up from yield");
+              await withdraw({ user: sch.userId!, asset: params.token, amount: shortfall, scheduleId: sch.id, cycleId });
             } catch (e) {
               log.warn({ err: e, scheduleId: sch.id }, "pre-remittance yield withdraw failed; proceeding");
             }
@@ -149,16 +208,7 @@ export async function runDue(): Promise<CycleSummary> {
           scheduleId: sch.id,
           cycleId,
         });
-        if (res.status === "confirmed" || res.status === "dry_run") {
-          summary.succeeded += 1;
-          summary.volume += Number(params.amount);
-        } else if (res.status === "skipped_cap") {
-          summary.skipped += 1;
-          outcome = "skipped";
-        } else {
-          summary.failed += 1;
-          outcome = "failed";
-        }
+        outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "dca") {
         const params = DcaParams.parse(sch.params);
         const res = await swap({
@@ -171,16 +221,7 @@ export async function runDue(): Promise<CycleSummary> {
           scheduleId: sch.id,
           cycleId,
         });
-        if (res.status === "confirmed" || res.status === "dry_run") {
-          summary.succeeded += 1;
-          summary.volume += Number(params.amount);
-        } else if (res.status === "skipped_cap") {
-          summary.skipped += 1;
-          outcome = "skipped";
-        } else {
-          summary.failed += 1;
-          outcome = "failed";
-        }
+        outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "savings_sweep") {
         const params = SavingsParams.parse(sch.params);
         const [u] = await db.select().from(users).where(eq(users.id, sch.userId!));
@@ -217,16 +258,7 @@ export async function runDue(): Promise<CycleSummary> {
             scheduleId: sch.id,
             cycleId,
           });
-          if (res.status === "confirmed" || res.status === "dry_run") {
-            summary.succeeded += 1;
-            summary.volume += Number(amount);
-          } else if (res.status === "skipped_cap") {
-            summary.skipped += 1;
-            outcome = "skipped";
-          } else {
-            summary.failed += 1;
-            outcome = "failed";
-          }
+          outcome = account(summary, res.status, Number(amount));
         }
       } else if (sch.kind === "fx_rebalance") {
         const params = FxRebalanceParams.parse(sch.params);
@@ -254,12 +286,7 @@ export async function runDue(): Promise<CycleSummary> {
           scheduleId: sch.id,
           cycleId,
         });
-        if (res.status === "confirmed" || res.status === "dry_run") {
-          summary.succeeded += 1;
-        } else {
-          summary.failed += 1;
-          outcome = "failed";
-        }
+        outcome = account(summary, res.status, 0);
       } else {
         summary.skipped += 1;
         outcome = "skipped";
@@ -270,11 +297,13 @@ export async function runDue(): Promise<CycleSummary> {
       outcome = "failed";
       log.error({ err, scheduleId: sch.id, kind: sch.kind }, "schedule execution failed");
     } finally {
-      // Guardians 4/5/6: a transient failure is retried on the NEXT heartbeat
-      // (the idempotency index forbids a same-cycle re-run), bounded by
-      // MAX_RETRIES. Otherwise advance to the next cadence and reset the counter.
-      // A remittance/bill_drip that exhausts its retries raises an operator alert.
+      // Only a TRANSIENT failure (never-broadcast) is retried on the next
+      // heartbeat, bounded by MAX_RETRIES. "reverted" (deterministic) and
+      // "unknown" (possibly mined; retrying could double-send) are NEVER retried.
+      // A schedule that keeps hard-failing across cadence slots auto-pauses so it
+      // stops burning gas and stops tripping the breaker.
       const attempts = sch.retryCount ?? 0;
+      const hardFail = outcome === "failed" || outcome === "reverted";
       const retriable = outcome === "failed" && attempts < config.MAX_RETRIES;
       try {
         if (retriable) {
@@ -284,18 +313,28 @@ export async function runDue(): Promise<CycleSummary> {
             .where(eq(schedules.id, sch.id));
           log.warn({ scheduleId: sch.id, kind: sch.kind, retry: attempts + 1 }, "transient failure; retrying next cycle");
         } else {
-          if (outcome === "failed" && TRANSFER_KINDS.has(sch.kind)) {
-            log.error({ scheduleId: sch.id, kind: sch.kind }, "OPERATOR ALERT: remittance failed after retries");
+          const consec = (sch.consecutiveFailures ?? 0) + (hardFail ? 1 : 0);
+          const resetConsec = outcome === "ok" || outcome === "skipped" ? 0 : consec;
+          if (hardFail && TRANSFER_KINDS.has(sch.kind)) {
+            await notify(`remittance schedule failed (${outcome}) after retries`, { scheduleId: sch.id, kind: sch.kind });
           }
-          await reschedule(sch.id);
-          await db.update(schedules).set({ retryCount: 0 }).where(eq(schedules.id, sch.id));
+          if (resetConsec >= config.MAX_CONSECUTIVE_FAILURES) {
+            await db
+              .update(schedules)
+              .set({ status: "paused", retryCount: 0, consecutiveFailures: resetConsec })
+              .where(eq(schedules.id, sch.id));
+            await notify(`schedule auto-paused after ${resetConsec} consecutive failures`, { scheduleId: sch.id, kind: sch.kind });
+          } else {
+            await reschedule(sch.id);
+            await db
+              .update(schedules)
+              .set({ retryCount: 0, consecutiveFailures: resetConsec })
+              .where(eq(schedules.id, sch.id));
+          }
         }
       } catch (err) {
         log.error({ err, scheduleId: sch.id }, "reschedule failed, leaving as active");
-        await db
-          .update(schedules)
-          .set({ status: "active" })
-          .where(eq(schedules.id, sch.id));
+        await db.update(schedules).set({ status: "active" }).where(eq(schedules.id, sch.id));
       }
     }
   }

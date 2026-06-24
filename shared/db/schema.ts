@@ -35,6 +35,12 @@ export const schedules = pgTable("schedules", {
   // How many times the current due action has been retried after a transient
   // failure. Reset to 0 once it succeeds or is rescheduled to the next cadence.
   retryCount: integer("retry_count").default(0),
+  // Consecutive run failures across cadence slots; a permanently failing
+  // schedule auto-pauses once this crosses MAX_CONSECUTIVE_FAILURES.
+  consecutiveFailures: integer("consecutive_failures").default(0),
+  // When a heartbeat claimed this row (status -> processing). A reclaim sweep at
+  // cycle start resets rows whose claim is older than the cycle timeout.
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
@@ -51,10 +57,59 @@ export const executions = pgTable("executions", {
   tokenOut: text("token_out"),
   feeCurrency: text("fee_currency"),
   error: text("error"),
-  // The heartbeat cycle that produced this row. A unique (schedule_id, cycle_id)
-  // index makes a double-execution impossible at the database (Phase 11).
+  // The heartbeat cycle that produced this row.
   cycleId: uuid("cycle_id"),
+  // Deterministic intent id (hash of schedule+user+kind+params+due-slot), the
+  // real idempotency key: a unique (user_id, intent_id) index prevents a second
+  // broadcast across retries and cycles. Independent of cycle_id.
+  intentId: text("intent_id"),
+  // USD-equivalent value of the move, used for spend-cap accounting so
+  // local-currency legs are not mis-counted by their nominal token amount.
+  usdValue: numeric("usd_value"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// Single-use sign-in nonces (EIP-4361). Issued by /api/auth/nonce, consumed by
+// /api/auth/verify. DB-backed because Vercel runs many serverless instances.
+export const authNonces = pgTable("auth_nonces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  address: text("address").notNull(),
+  nonce: text("nonce").notNull().unique(),
+  used: boolean("used").default(false),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// x402 EIP-3009 replay store: a payer's authorization nonce may settle once.
+export const x402Nonces = pgTable("x402_nonces", {
+  payer: text("payer").notNull(),
+  nonce: text("nonce").notNull(),
+  txHash: text("tx_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// Per-user confirmed remittance recipients. A schedule may only send to an
+// address on this list, added through the authenticated confirm flow.
+export const recipients = pgTable("recipients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  address: text("address").notNull(),
+  label: text("label"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// Applied-migration ledger so migrate.ts runs each file at most once.
+export const schemaMigrations = pgTable("schema_migrations", {
+  filename: text("filename").primaryKey(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).defaultNow(),
+});
+
+// DB-backed fixed-window rate limiting (per-IP / per-principal) for public and
+// auth routes; works across serverless instances.
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").default(0),
+  windowStart: timestamp("window_start", { withTimezone: true }).defaultNow(),
 });
 
 export const treasuryActions = pgTable("treasury_actions", {

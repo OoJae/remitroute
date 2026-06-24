@@ -1,33 +1,20 @@
-// thirdweb client + x402 facilitator for the paid FX-route endpoint. The
-// facilitator settles payments gaslessly (EIP-7702) using a thirdweb server
-// wallet; payments are received at the payTo address (the agent owner wallet).
-import { parseSignature, parseUnits } from "viem";
-import { createThirdwebClient } from "thirdweb";
-import { facilitator } from "thirdweb/x402";
+// Self-hosted x402 facilitator for the paid FX-route endpoint. We settle the
+// payer's signed EIP-3009 authorization ourselves on Celo (gas paid in cUSD via
+// fee abstraction); payments are received at the payTo address (the agent owner
+// wallet).
+import { getAddress, parseSignature, parseUnits } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { and, eq } from "drizzle-orm";
 import { config } from "./config.js";
 import { TOKENS } from "./addresses.js";
 import { publicClient, walletClientFor } from "./viem.js";
 import { feeCurrencyAdapter } from "./feeCurrency.js";
+import { db } from "./db/client.js";
+import { x402Nonces } from "./db/schema.js";
 import { log } from "./log.js";
 
-// Server-side client (secret key). Throws clearly if x402 is not configured.
-export function thirdwebServerClient() {
-  if (!config.THIRDWEB_SECRET_KEY) {
-    throw new Error("THIRDWEB_SECRET_KEY not set; x402 endpoint is not configured");
-  }
-  return createThirdwebClient({ secretKey: config.THIRDWEB_SECRET_KEY });
-}
-
-// The thirdweb x402 facilitator bound to our server wallet.
-export function x402Facilitator() {
-  if (!config.SERVER_WALLET_ADDRESS) {
-    throw new Error("SERVER_WALLET_ADDRESS not set; provision a thirdweb server wallet first");
-  }
-  return facilitator({
-    client: thirdwebServerClient(),
-    serverWalletAddress: config.SERVER_WALLET_ADDRESS,
-  });
-}
+// Tolerance (seconds) when checking the authorization's validity window.
+const CLOCK_SKEW_S = 120;
 
 // Where x402 revenue is received: explicit X402_PAYTO, else the agent owner wallet.
 export function x402PayTo(): string {
@@ -75,12 +62,22 @@ const TRANSFER_WITH_AUTHORIZATION_ABI = [
 // EIP-3009 authorization ourselves: the agent relayer submits the payer's signed
 // transferWithAuthorization, paying gas in cUSD (Celo fee abstraction). The payer
 // signs a direct transfer to payTo (the owner wallet), so no forwarding is needed.
+export interface SettlementInfo {
+  transaction: string;
+  payer: string;
+  value: string;
+}
+
 export function localFacilitator() {
-  const relayerKey = config.AGENT_PRIVATE_KEY;
+  // Dedicated, minimally-funded relayer so an attacker forcing settlements
+  // cannot drain the engine's gas wallet. Falls back to the agent key if unset.
+  const relayerKey = config.RELAYER_PRIVATE_KEY ?? config.AGENT_PRIVATE_KEY;
   if (!relayerKey) {
-    throw new Error("AGENT_PRIVATE_KEY not set; the x402 relayer cannot settle");
+    throw new Error("RELAYER_PRIVATE_KEY (or AGENT_PRIVATE_KEY) not set; the x402 relayer cannot settle");
   }
   const relayerHex = (relayerKey.startsWith("0x") ? relayerKey : `0x${relayerKey}`) as `0x${string}`;
+  // Captures the real settled (txHash, payer, value) so the caller can record it.
+  const state: { last: SettlementInfo | null } = { last: null };
 
   // Build the 402 payment requirements settlePayment advertises to callers.
   // payTo is the owner wallet, asset is USDC, and extra carries USDC's EIP-712
@@ -109,45 +106,127 @@ export function localFacilitator() {
   }
 
   // Submit the caller's signed EIP-3009 authorization on Celo, gas paid in cUSD.
+  // ALL economic checks run before any broadcast: an attacker cannot get a free
+  // quote with a worthless/self/expired/replayed authorization, and a junk auth
+  // never costs the relayer gas (we pre-simulate). The USDC contract also
+  // enforces signer == from and single-use nonces onchain; these checks just make
+  // the failure free and explicit.
+  const network = "eip155:42220";
+  const fail = (reason: string, message: string, payer = "", transaction = "") => ({
+    success: false as const,
+    errorReason: reason,
+    errorMessage: message,
+    network,
+    transaction,
+    payer,
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function settle(payload: any, requirements: any) {
     const auth = payload?.payload?.authorization;
     const signature = payload?.payload?.signature as `0x${string}` | undefined;
-    if (!auth || !signature) {
-      return { success: false, errorReason: "invalid_payload", errorMessage: "missing authorization or signature", network: requirements?.network ?? "eip155:42220", transaction: "", payer: "" };
+    if (!auth || !signature) return fail("invalid_payload", "missing authorization or signature");
+
+    // 1. Economic validation (no broadcast, no gas).
+    let payTo: string;
+    let to: string;
+    let from: string;
+    try {
+      payTo = getAddress(x402PayTo());
+      to = getAddress(auth.to);
+      from = getAddress(auth.from);
+    } catch {
+      return fail("bad_address", "authorization addresses are malformed");
     }
+    if (to !== payTo) {
+      return fail("wrong_destination", `auth.to ${to} is not the required payTo ${payTo}`, from);
+    }
+    let value: bigint;
+    try {
+      value = BigInt(auth.value);
+    } catch {
+      return fail("bad_value", "authorization value is not an integer", from);
+    }
+    const required = BigInt(requirements?.maxAmountRequired ?? x402Price().amount);
+    if (value < required) {
+      return fail("underpaid", `authorized ${value} is below the required ${required}`, from);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const validAfter = Number(auth.validAfter);
+    const validBefore = Number(auth.validBefore);
+    if (!(validAfter <= now + CLOCK_SKEW_S && validBefore >= now - CLOCK_SKEW_S)) {
+      return fail("outside_validity_window", "authorization is not currently valid", from);
+    }
+
+    // 2. Replay reservation: a (payer, nonce) may settle at most once. Unique
+    // index makes this atomic; a conflict means the authorization was used.
+    const payerKey = from.toLowerCase();
+    const nonceKey = String(auth.nonce).toLowerCase();
+    const reserved = await db
+      .insert(x402Nonces)
+      .values({ payer: payerKey, nonce: nonceKey })
+      .onConflictDoNothing()
+      .returning();
+    if (reserved.length === 0) {
+      return fail("replayed_nonce", "this authorization nonce was already used", from);
+    }
+
     try {
       const { r, s, v, yParity } = parseSignature(signature);
       const vNum = v !== undefined ? Number(v) : yParity + 27;
-      const wallet = walletClientFor(relayerHex);
-      const hash = await wallet.writeContract({
+      const account = privateKeyToAccount(relayerHex);
+      const callArgs = {
         address: TOKENS.USDC.address,
         abi: TRANSFER_WITH_AUTHORIZATION_ABI,
-        functionName: "transferWithAuthorization",
+        functionName: "transferWithAuthorization" as const,
         args: [
-          auth.from,
-          auth.to,
-          BigInt(auth.value),
+          getAddress(auth.from),
+          getAddress(auth.to),
+          value,
           BigInt(auth.validAfter),
           BigInt(auth.validBefore),
-          auth.nonce,
+          auth.nonce as `0x${string}`,
           vNum,
           r,
           s,
-        ],
-        feeCurrency: feeCurrencyAdapter(),
-      });
+        ] as const,
+        account,
+      };
+
+      // 3. Pre-simulate so a bad signature / insufficient balance never costs gas.
+      await publicClient.simulateContract(callArgs);
+
+      // 4. Broadcast (gas in cUSD via fee abstraction).
+      const wallet = walletClientFor(relayerHex);
+      const hash = await wallet.writeContract({ ...callArgs, feeCurrency: feeCurrencyAdapter() });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
-        return { success: false, errorReason: "settlement_reverted", errorMessage: `tx ${hash} reverted`, network: requirements?.network ?? "eip155:42220", transaction: hash, payer: auth.from };
+        // Keep the nonce reserved (the payer must re-sign with a fresh nonce).
+        return fail("settlement_reverted", `tx ${hash} reverted`, from, hash);
       }
-      log.info({ hash, payer: auth.from, to: auth.to, value: auth.value }, "x402 settled onchain");
-      return { success: true, transaction: hash, network: requirements?.network ?? "eip155:42220", payer: auth.from };
+      await db
+        .update(x402Nonces)
+        .set({ txHash: hash })
+        .where(and(eq(x402Nonces.payer, payerKey), eq(x402Nonces.nonce, nonceKey)));
+      state.last = { transaction: hash, payer: from, value: value.toString() };
+      log.info({ hash, payer: from, to, value: value.toString() }, "x402 settled onchain");
+      return { success: true as const, transaction: hash, network, payer: from };
     } catch (err) {
-      return { success: false, errorReason: "settlement_error", errorMessage: (err as Error).message, network: requirements?.network ?? "eip155:42220", transaction: "", payer: auth?.from ?? "" };
+      // Never broadcast (simulate threw or an RPC error): release the nonce so a
+      // transient failure can be retried with the same authorization.
+      await db
+        .delete(x402Nonces)
+        .where(and(eq(x402Nonces.payer, payerKey), eq(x402Nonces.nonce, nonceKey)))
+        .catch(() => {});
+      return fail("settlement_error", (err as Error).message, from);
     }
   }
 
-  // Only accepts + settle are exercised by settlePayment; the rest satisfy the type.
-  return { accepts, settle } as unknown as ReturnType<typeof x402Facilitator>;
+  // Only accepts + settle are exercised by settlePayment; state exposes the last
+  // settlement so the route can record the real txHash/payer/value. settlePayment
+  // types the facilitator more broadly than we implement, so we widen to any
+  // here (the route relies on accepts/settle/settlement only).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fac = { accepts, settle, settlement: state } as any;
+  return fac;
 }

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Hermetic defaults so shared/config.ts validates during typecheck/tests.
+      # No real secrets: the suites never touch a DB or the network.
+      DATABASE_URL: postgres://test:test@localhost:5432/remitroute_test
+      SESSION_SECRET: ci-session-secret-0000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test

@@ -81,6 +81,29 @@ interface ScheduleItem {
   status: string;
 }
 
+// Poll the injected provider for a receipt so the UI only shows success once the
+// transaction is actually confirmed (status 0x1), never optimistically on the
+// hash. Returns null if it does not confirm within the window.
+async function waitForReceipt(
+  eth: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> },
+  txHash: string,
+  tries = 24,
+): Promise<boolean | null> {
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      const r = (await eth.request({
+        method: "eth_getTransactionReceipt",
+        params: [txHash],
+      })) as { status?: string } | null;
+      if (r) return r.status === "0x1";
+    } catch {
+      /* transient; retry */
+    }
+    await new Promise((res) => setTimeout(res, 2500));
+  }
+  return null;
+}
+
 export default function Home() {
   const { connect, connectors } = useConnect();
   const { address, isConnected } = useAccount();
@@ -119,16 +142,47 @@ export default function Home() {
     }
   }, [connect, connectors]);
 
-  // Once connected, create the user and the dedicated execution wallet.
+  // Once connected, sign in: fetch a nonce, sign it in MiniPay (personal_sign,
+  // no gas), and exchange it for an HttpOnly session cookie. The same call
+  // creates the user + execution wallet on first sign-in. After this the cookie
+  // authenticates every request, so no userId is ever sent by the client.
   useEffect(() => {
-    if (!isConnected || !address || onboard) return;
+    if (!isConnected || !address || onboard || typeof window === "undefined" || !window.ethereum) {
+      return;
+    }
+    const eth = window.ethereum;
     void (async () => {
-      const res = await fetch("/api/onboard", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ minipayAddress: address }),
-      });
-      if (res.ok) setOnboard((await res.json()) as OnboardResult);
+      try {
+        setStatus("Signing you in...");
+        const nonceRes = await fetch("/api/auth/nonce", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ minipayAddress: address }),
+        });
+        if (!nonceRes.ok) {
+          setStatus("Could not start sign-in. Please try again.");
+          return;
+        }
+        const { nonce, message } = (await nonceRes.json()) as { nonce: string; message: string };
+        const signature = (await eth.request({
+          method: "personal_sign",
+          params: [message, address],
+        })) as string;
+        const verifyRes = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ minipayAddress: address, nonce, signature }),
+        });
+        if (verifyRes.ok) {
+          setOnboard((await verifyRes.json()) as OnboardResult);
+          setStatus("");
+        } else {
+          setStatus("Sign-in failed. Please try again.");
+        }
+      } catch (err) {
+        const m = ((err as Error)?.message ?? "").toLowerCase();
+        setStatus(m.includes("denied") || m.includes("rejected") ? "Sign-in cancelled." : "Could not sign in.");
+      }
     })();
   }, [isConnected, address, onboard]);
 
@@ -154,29 +208,31 @@ export default function Home() {
     setRulesStatus("");
   }, [address]);
 
-  // Load this user's activity.
-  const loadActivity = useCallback(async (userId: string) => {
-    const res = await fetch(`/api/executions?user=${userId}`);
+  // The session cookie identifies the user; no userId is put in the URL. The
+  // optional AbortSignal lets a load be cancelled when the account switches, so a
+  // slow response for the previous account can never overwrite the new one.
+  const loadActivity = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/executions", { signal });
     if (res.ok) setActivity(((await res.json()) as { items: ExecutionItem[] }).items);
   }, []);
 
-  // Load the execution wallet balances.
-  const loadBalances = useCallback(async (userId: string) => {
-    const res = await fetch(`/api/balance?user=${userId}`);
+  const loadBalances = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/balance", { signal });
     if (res.ok) setBalances(((await res.json()) as { balances: TokenBalance[] }).balances);
   }, []);
 
-  // Load this user's rules (active + paused; cancelled excluded server-side).
-  const loadRules = useCallback(async (userId: string) => {
-    const res = await fetch(`/api/schedules?user=${userId}`);
+  const loadRules = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/schedules", { signal });
     if (res.ok) setRules(((await res.json()) as { items: ScheduleItem[] }).items);
   }, []);
 
   useEffect(() => {
     if (!onboard) return;
-    void loadActivity(onboard.userId);
-    void loadBalances(onboard.userId);
-    void loadRules(onboard.userId);
+    const ctrl = new AbortController();
+    void loadActivity(ctrl.signal).catch(() => {});
+    void loadBalances(ctrl.signal).catch(() => {});
+    void loadRules(ctrl.signal).catch(() => {});
+    return () => ctrl.abort();
   }, [onboard, loadActivity, loadBalances, loadRules]);
 
   // Tick once a second so the Next Execution countdown stays live.
@@ -196,7 +252,18 @@ export default function Home() {
   // One-time funding transfer. The user signs a cUSD transfer in MiniPay native
   // UI. Legacy transaction with feeCurrency set so gas is paid in cUSD.
   const fund = useCallback(async () => {
-    if (!onboard || !address || !window.ethereum) return;
+    if (!onboard || !address || typeof window === "undefined" || !window.ethereum) return;
+    const eth = window.ethereum;
+    // Validate the amount before prompting a signature (no NaN/<=0; cUSD is 18dp).
+    const amt = Number(fundAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setStatus("Enter a positive amount to fund.");
+      return;
+    }
+    if ((fundAmount.split(".")[1] ?? "").length > 18) {
+      setStatus("Too many decimal places.");
+      return;
+    }
     try {
       setStatus("Requesting signature in MiniPay...");
       const data = encodeFunctionData({
@@ -204,7 +271,7 @@ export default function Home() {
         functionName: "transfer",
         args: [onboard.executionWallet as `0x${string}`, parseUnits(fundAmount, 18)],
       });
-      const txHash = (await window.ethereum.request({
+      const txHash = (await eth.request({
         method: "eth_sendTransaction",
         params: [
           {
@@ -216,9 +283,17 @@ export default function Home() {
           },
         ],
       })) as string;
-      setStatus(`Funded. Transaction ${txHash.slice(0, 10)}...`);
-      // Give the node a moment, then refresh the balance.
-      setTimeout(() => void loadBalances(onboard.userId), 4000);
+      // Only report success once the receipt confirms, never on the hash alone.
+      setStatus("Confirming your funding transaction...");
+      const ok = await waitForReceipt(eth, txHash);
+      setStatus(
+        ok === true
+          ? `Funded. Transaction ${txHash.slice(0, 10)}...`
+          : ok === false
+            ? "The funding transaction reverted. Please try again."
+            : `Submitted ${txHash.slice(0, 10)}... It is taking a while to confirm; your balance will update shortly.`,
+      );
+      void loadBalances();
     } catch (err) {
       const m = ((err as Error)?.message ?? "").toLowerCase();
       if (m.includes("exceeds balance") || m.includes("insufficient")) {
@@ -249,7 +324,7 @@ export default function Home() {
     const res = await fetch("/api/withdraw", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ user: onboard.userId, token: withdrawToken, amount: withdrawAmount }),
+      body: JSON.stringify({ token: withdrawToken, amount: withdrawAmount }),
     });
     const body = (await res.json().catch(() => ({}))) as {
       status?: string;
@@ -263,8 +338,8 @@ export default function Home() {
           : `Withdrawn. Transaction ${body.txHash?.slice(0, 10)}...`,
       );
       setWithdrawAmount("");
-      void loadBalances(onboard.userId);
-      void loadActivity(onboard.userId);
+      void loadBalances();
+      void loadActivity();
     } else if (body.status === "skipped_empty") {
       setWithdrawStatus("Your automation wallet is empty, nothing to withdraw.");
     } else if (body.status === "reverted") {
@@ -284,7 +359,7 @@ export default function Home() {
     const res = await fetch("/api/profile", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ user: onboard.userId, city: city.trim(), country: country.trim() }),
+      body: JSON.stringify({ city: city.trim(), country: country.trim() }),
     });
     if (res.ok) {
       setProfileSaved(true);
@@ -331,7 +406,6 @@ export default function Home() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        user: onboard.userId,
         kind: parsedRule.kind,
         params,
         cadence: parsedRule.cadence,
@@ -343,8 +417,8 @@ export default function Home() {
       setParsedRule(null);
       setRuleText("");
       setRecipientAddr("");
-      void loadActivity(onboard.userId);
-      void loadRules(onboard.userId);
+      void loadActivity();
+      void loadRules();
     } else {
       const e = (await res.json()) as { error?: string };
       setRuleStatus(e.error ?? "Could not save the rule.");
@@ -359,9 +433,9 @@ export default function Home() {
       const res = await fetch(`/api/schedules/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ user: onboard.userId, action }),
+        body: JSON.stringify({ action }),
       });
-      if (res.ok) void loadRules(onboard.userId);
+      if (res.ok) void loadRules();
       else setRulesStatus("Could not update that rule.");
     },
     [onboard, loadRules],
@@ -371,12 +445,8 @@ export default function Home() {
     async (id: string) => {
       if (!onboard) return;
       setRulesStatus("");
-      const res = await fetch(`/api/schedules/${id}`, {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ user: onboard.userId }),
-      });
-      if (res.ok) void loadRules(onboard.userId);
+      const res = await fetch(`/api/schedules/${id}`, { method: "DELETE" });
+      if (res.ok) void loadRules();
       else setRulesStatus("Could not delete that rule.");
     },
     [onboard, loadRules],
@@ -401,17 +471,18 @@ export default function Home() {
         await fetch("/api/feedback", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            user: onboard.userId,
-            clientAddress: address,
-            score,
-            tag: "starred",
-            txHash,
-          }),
+          body: JSON.stringify({ score, tag: "starred", txHash }),
         });
         setRateStatus(`Thanks. Rating submitted: ${txHash.slice(0, 10)}...`);
       } catch (err) {
-        setRateStatus(`Rating cancelled or failed: ${(err as Error).message}`);
+        {
+          const m = ((err as Error)?.message ?? "").toLowerCase();
+          setRateStatus(
+            m.includes("denied") || m.includes("rejected")
+              ? "Rating cancelled."
+              : "Could not submit your rating. Please try again.",
+          );
+        }
       }
     },
     [onboard, address, agentInfo],

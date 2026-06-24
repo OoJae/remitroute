@@ -13,7 +13,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const CreateBody = z.object({
-  user: z.string().uuid(),
   kind: ScheduleKind,
   params: z.record(z.unknown()),
   cadence: CadenceSchema,
@@ -21,6 +20,9 @@ const CreateBody = z.object({
 });
 
 export async function POST(request: Request) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const parsed = CreateBody.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const [user] = await db.select().from(users).where(eq(users.id, parsed.data.user));
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) return NextResponse.json({ error: "unknown user" }, { status: 404 });
 
   // Validate params against the kind's schema before saving.
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
   const [row] = await db
     .insert(schedules)
     .values({
-      userId: parsed.data.user,
+      userId,
       kind: parsed.data.kind,
       params,
       cadence: parsed.data.cadence,
@@ -60,15 +62,12 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const parsed = z.string().uuid().safeParse(url.searchParams.get("user"));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "user query param must be a uuid" }, { status: 400 });
-  }
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const rows = await db
     .select()
     .from(schedules)
-    .where(and(eq(schedules.userId, parsed.data), ne(schedules.status, "cancelled")))
+    .where(and(eq(schedules.userId, userId), ne(schedules.status, "cancelled")))
     .orderBy(desc(schedules.createdAt))
     .limit(50);
   return NextResponse.json({ items: rows });

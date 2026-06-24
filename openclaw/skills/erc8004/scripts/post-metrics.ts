@@ -8,7 +8,7 @@ import { sql } from "drizzle-orm";
 import type { Hex } from "../../../../shared/addresses.js";
 import { config } from "../../../../shared/config.js";
 import { db, pool } from "../../../../shared/db/client.js";
-import { executions } from "../../../../shared/db/schema.js";
+import { executions, engineCycles } from "../../../../shared/db/schema.js";
 import {
   erc8004PublicClient,
   erc8004WalletFor,
@@ -43,7 +43,20 @@ async function computeMetrics(): Promise<Metric[]> {
   const failed = row?.failed ?? 0;
   const attempted = succeeded + failed;
   const successRate = attempted > 0 ? succeeded / attempted : 1;
-  const uptime = 1; // the agent is running this cycle
+
+  // Uptime: fraction of the last 24h of engine cycles that ran to completion
+  // (were not aborted). A heartbeat that aborts mid-cycle (e.g. gas floor, halt)
+  // is downtime. Default to 1 when no cycles have run yet.
+  const [cycleRow] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      completed: sql<number>`count(*) filter (where aborted is not true)::int`,
+    })
+    .from(engineCycles)
+    .where(sql`created_at >= now() - interval '24 hours'`);
+  const totalCycles = cycleRow?.total ?? 0;
+  const completedCycles = cycleRow?.completed ?? 0;
+  const uptime = totalCycles > 0 ? Math.min(1, Math.max(0, completedCycles / totalCycles)) : 1;
 
   // Measure responsiveness as a single live RPC round trip. This is the agent's
   // own latency to reach its data source; it excludes block-inclusion time

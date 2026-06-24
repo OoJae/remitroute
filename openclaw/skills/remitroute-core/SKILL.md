@@ -11,12 +11,12 @@ The brain of RemitRoute. Two jobs: turn a user plain-language rule into a struct
 
 ## When to use
 
-- During onboarding, when a user states a rule in the Mini App or Telegram (for example "save 10 percent every Friday"): call `parse-rule.ts` to produce a validated schedule row.
+- During onboarding, when a user states a rule in the Mini App (for example "save 10 percent every Friday"): call `parse-rule.ts` to produce a validated schedule row.
 - Every heartbeat (Guardian 2): call `run-due.ts` to execute all due schedules.
 
 ## Scripts
 
-- `scripts/parse-rule.ts --user <id> --text "<rule>"`: parses the rule into a structured schedule. Validates with zod. Resolves the kind (`dca`, `savings_sweep`, `fx_rebalance`, `remittance`, `bill_drip`), the params (amounts, target asset, recipient, percentages, target weights), the cadence, and the first `next_run`. For remittances, resolves and confirms the recipient against the user allowlist (and optionally via ODIS phone lookup, see the MiniPay integration). Returns the row for user confirmation before it is saved as active.
+- `scripts/parse-rule.ts --user <id> --text "<rule>"`: parses the rule into a structured schedule. Validates with zod. Resolves the kind (`dca`, `savings_sweep`, `fx_rebalance`, `remittance`, `bill_drip`), the params (amounts, target asset, recipient, percentages, target weights), the cadence, and the first `next_run`. For remittances, resolves and confirms the recipient against the user allowlist. Returns the row for user confirmation before it is saved as active.
 - `scripts/run-due.ts`: loads all active schedules where `next_run <= now()`, ordered by `next_run`, and for each one enforces caps, acquires the per-schedule lock, dispatches by kind, writes the execution, recomputes and persists `next_run`, and releases the lock. Continues past individual failures.
 - `scripts/reschedule.ts --schedule <id>`: recomputes `next_run` from the cadence. Used by `run-due.ts` and after manual edits.
 

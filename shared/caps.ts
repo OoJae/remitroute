@@ -17,15 +17,17 @@ export interface CapDecision {
   perTxCap: number;
 }
 
-// Sum amount_in for successful or pending sends since midnight UTC. Dry runs do
-// not count against caps. A row counts if its status is not a failure or dry run.
-const COUNTED_STATUSES = ["sent", "confirmed", "success"] as const;
+// Sum amount_in for money that moved (or may have moved) in the trailing 24h. A
+// ROLLING window, not a midnight reset, so an attacker cannot spend ~2x the daily
+// cap across the UTC boundary, and the result no longer depends on the DB session
+// timezone. broadcast_unknown counts because that money may have left the wallet.
+const COUNTED_STATUSES = ["confirmed", "success", "sent", "broadcast_unknown"] as const;
 
 async function sumSince(userId?: string): Promise<number> {
-  const startOfDay = sql`date_trunc('day', now())`;
+  const windowStart = sql`now() - interval '24 hours'`;
   const filters = [
-    gte(executions.createdAt, startOfDay as never),
-    sql`${executions.status} in ('sent','confirmed','success')`,
+    gte(executions.createdAt, windowStart as never),
+    sql`${executions.status} in ('confirmed','success','sent','broadcast_unknown')`,
   ];
   if (userId) filters.push(eq(executions.userId, userId));
 

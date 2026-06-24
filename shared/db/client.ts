@@ -7,11 +7,11 @@ import * as schema from "./schema.js";
 
 const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
-  // Neon requires TLS. node-postgres honors sslmode in the URL, but set this so
-  // self-signed chains in hosted Postgres do not break the connection.
-  ssl: config.DATABASE_URL.includes("localhost")
-    ? false
-    : { rejectUnauthorized: false },
+  // Verify the server certificate (Neon serves a public CA chain Node trusts).
+  // Never disable verification: an on-path attacker could otherwise MITM Postgres
+  // and read encrypted-key ciphertext / inject results. Plain TLS off only for a
+  // local dev database.
+  ssl: config.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: true },
 });
 
 export const db = drizzle(pool, { schema });

@@ -5,6 +5,7 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db/client.js";
 import { engineState, engineCycles, executions } from "./db/schema.js";
 import { config } from "./config.js";
+import { notify } from "./alerts.js";
 
 const SINGLETON = "singleton";
 
@@ -26,7 +27,8 @@ export async function getEngineState(): Promise<EngineState> {
   };
 }
 
-// Trip the breaker. Upserts the singleton so it works even before the seed row.
+// Trip the breaker. Upserts the singleton so it works even before the seed row,
+// and pages the operator (the audit's "alert the operator" used to be log-only).
 export async function haltEngine(reason: string): Promise<void> {
   await db
     .insert(engineState)
@@ -35,6 +37,7 @@ export async function haltEngine(reason: string): Promise<void> {
       target: engineState.id,
       set: { status: "halted", haltReason: reason, haltedAt: new Date(), updatedAt: new Date() },
     });
+  await notify(`engine HALTED: ${reason}`, { reason });
 }
 
 // Clear the breaker (manual operator reset).

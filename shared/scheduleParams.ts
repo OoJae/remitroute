@@ -2,6 +2,7 @@
 // schedule-create paths, and the natural-language parser all validate against
 // these exact schemas, so a rule can never reach execution malformed.
 import { z } from "zod";
+import { isAddress } from "viem";
 
 export const SCHEDULE_KINDS = [
   "remittance",
@@ -17,9 +18,12 @@ export type ScheduleKind = z.infer<typeof ScheduleKind>;
 
 const amount = z.string().refine((a) => Number(a) > 0, "amount must be positive");
 
-// remittance and bill_drip: send a stablecoin to a recipient.
+// remittance and bill_drip: send a stablecoin to a recipient. The recipient must
+// be a valid address at save time so a malformed rule cannot be saved active and
+// then revert every cycle (and the engine still resolves to a real allowlist
+// check at execution time).
 export const TransferParams = z.object({
-  to: z.string().min(1),
+  to: z.string().refine((a) => isAddress(a), "to must be a valid address"),
   amount,
   token: z.string().min(1).default("cUSD"),
 });

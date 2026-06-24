@@ -14,6 +14,7 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { reconcileTx } from "../../../../shared/reconcile.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
 import { log } from "../../../../shared/log.js";
 
@@ -63,6 +64,27 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
     return { status: "skipped_cap" };
   }
 
+  // Balance pre-check: skip cleanly rather than burn approval gas on a revert.
+  const balance = (await publicClient.readContract({
+    address: token.address,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [owner],
+  })) as bigint;
+  if (balance < amountUnits) {
+    log.info({ owner, asset: args.asset, amount: args.amount }, "supply skipped: insufficient balance");
+    await recordRow({
+      userId: args.user,
+      scheduleId: args.scheduleId,
+      cycleId: args.cycleId,
+      kind: args.kind,
+      status: "skipped_empty",
+      amountIn: args.amount,
+      tokenIn: args.asset,
+    });
+    return { status: "skipped_empty" };
+  }
+
   const poolAddress = await resolvePool();
 
   // Does the execution wallet already have enough allowance to the Pool?
@@ -99,11 +121,10 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
     return { status: "dry_run" };
   }
 
-  const pk = user.walletKeyRef.startsWith("0x")
-    ? (user.walletKeyRef as Hex)
-    : (decryptKey(user.walletKeyRef) as Hex);
+  const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
   const account = wallet.account!;
+  let txHash: string | undefined;
 
   try {
     if (needsApproval) {
@@ -120,7 +141,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       log.info({ approvalHash, asset: args.asset }, "Aave pool allowance approved");
     }
 
-    const txHash = await wallet.writeContract({
+    txHash = await wallet.writeContract({
       account,
       chain: celo,
       address: poolAddress,
@@ -129,7 +150,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       args: [token.address, amountUnits, owner, 0],
       feeCurrency,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     log.info({ txHash, status, asset: args.asset, amount: args.amount }, "supply sent");
     await recordRow({
@@ -145,18 +166,20 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error({ err, asset: args.asset }, "supply failed");
+    const status = await reconcileTx(txHash);
+    log.error({ err, asset: args.asset, reconciled: status }, "supply error; reconciled");
     await recordRow({
       userId: args.user,
       scheduleId: args.scheduleId,
       cycleId: args.cycleId,
       kind: args.kind,
-      status: "failed",
+      status,
+      txHash,
       amountIn: args.amount,
       tokenIn: args.asset,
-      error: message,
+      error: status === "confirmed" ? undefined : message,
     });
-    return { status: "failed" };
+    return { status, txHash };
   }
 }
 

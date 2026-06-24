@@ -15,6 +15,7 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { reconcileTx } from "../../../../shared/reconcile.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { log } from "../../../../shared/log.js";
 
@@ -134,11 +135,10 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
   }
 
   // Real execution. Approve first if required, then swap. Both pay gas in stablecoin.
-  const pk = user.walletKeyRef.startsWith("0x")
-    ? (user.walletKeyRef as Hex)
-    : (decryptKey(user.walletKeyRef) as Hex);
+  const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
   const account = wallet.account!;
+  let txHash: string | undefined;
 
   try {
     if (built.approval) {
@@ -153,14 +153,14 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       log.info({ approvalHash }, "swap allowance approved");
     }
 
-    const txHash = await wallet.sendTransaction({
+    txHash = await wallet.sendTransaction({
       account,
       chain: celo,
       to: getAddress(built.swap.params.to),
       data: built.swap.params.data as Hex,
       feeCurrency,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     log.info({ txHash, status, tokenIn: args.tokenIn, tokenOut: args.tokenOut }, "swap sent");
     await recordSwap({
@@ -178,19 +178,24 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error({ err, tokenIn: args.tokenIn, tokenOut: args.tokenOut }, "swap failed");
+    const status = await reconcileTx(txHash);
+    log.error(
+      { err, tokenIn: args.tokenIn, tokenOut: args.tokenOut, reconciled: status },
+      "swap error; reconciled",
+    );
     await recordSwap({
       userId: args.user,
       scheduleId: args.scheduleId,
       cycleId: args.cycleId,
       kind: args.kind,
-      status: "failed",
+      status,
+      txHash,
       amountIn: args.amountIn,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
-      error: message,
+      error: status === "confirmed" ? undefined : message,
     });
-    return { status: "failed" };
+    return { status, txHash };
   }
 }
 

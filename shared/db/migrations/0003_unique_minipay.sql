@@ -26,8 +26,13 @@ WITH ranked AS (
   FROM users u
   WHERE u.minipay_address IS NOT NULL
 )
-DELETE FROM users
-WHERE id IN (SELECT id FROM ranked WHERE rn > 1 AND has_activity = false);
+-- Non-destructive: NEVER delete a row (every row holds a wallet_key_ref, so a
+-- delete would destroy the only copy of an automation wallet's key and orphan its
+-- funds). Instead detach the losing duplicate's minipay binding; NULLs may repeat
+-- under the unique index, and the winning row keeps the address. The losing
+-- wallet + key are preserved for manual reconciliation.
+UPDATE users SET minipay_address = NULL
+WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
 
 -- One automation wallet per MiniPay address. NULL minipay_address rows (e.g. a
 -- Telegram-only user) are allowed to repeat, which Postgres permits for NULLs.

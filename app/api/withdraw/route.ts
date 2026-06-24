@@ -10,19 +10,21 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const BodySchema = z.object({
-  user: z.string().uuid(),
   token: z.enum(["cUSD", "USDC", "cEUR"]),
   amount: z.string().refine((a) => a === "max" || Number(a) > 0, "amount must be positive or 'max'"),
 });
 
 export async function POST(request: Request) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid body", issues: parsed.error.issues }, { status: 400 });
   }
 
   try {
-    const result = await withdraw(parsed.data);
+    const result = await withdraw({ user: userId, token: parsed.data.token, amount: parsed.data.amount });
     const status = result.status === "failed" ? 502 : 200;
     return NextResponse.json(result, { status });
   } catch (err) {

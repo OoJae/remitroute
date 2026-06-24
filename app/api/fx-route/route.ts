@@ -9,6 +9,7 @@ import { localFacilitator, x402PayTo, x402Price } from "../../../shared/x402.js"
 import { getMento, resolveMentoToken } from "../../../shared/mento.js";
 import { db } from "../../../shared/db/client.js";
 import { treasuryActions } from "../../../shared/db/schema.js";
+import { rateLimit, clientIp } from "../../../shared/ratelimit.js";
 import { log } from "../../../shared/log.js";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,15 @@ export const runtime = "nodejs";
 const RESOURCE_URL = `${config.APP_BASE_URL.replace(/\/$/, "")}/api/fx-route`;
 
 export async function GET(request: Request) {
+  // Master switch: when disabled the paid API cannot be abused or settle.
+  if (!config.X402_ENABLED) {
+    return Response.json({ error: "not found" }, { status: 404 });
+  }
+  // Rate limit per IP before any quote or settlement, so an attacker cannot
+  // force unbounded relayer gas / RPC work even with valid-looking payments.
+  const rl = await rateLimit(`fx-route:${clientIp(request)}`, { max: 30, windowSec: 60 });
+  if (!rl.allowed) return Response.json({ error: "rate limited" }, { status: 429 });
+
   const url = new URL(request.url);
   const tokenIn = url.searchParams.get("tokenIn") ?? "cUSD";
   const tokenOut = url.searchParams.get("tokenOut") ?? "cKES";
@@ -53,7 +63,9 @@ export async function GET(request: Request) {
   }
 
   // Settle the payment (returns 402 with requirements when unpaid; on a paid and
-  // valid request, submits the caller's EIP-3009 authorization onchain on Celo).
+  // valid request, submits the caller's EIP-3009 authorization onchain on Celo
+  // after our pre-broadcast economic validation in localFacilitator.settle).
+  const fac = localFacilitator();
   let result;
   try {
     result = await settlePayment({
@@ -63,7 +75,7 @@ export async function GET(request: Request) {
       payTo: x402PayTo(),
       network: celo,
       price: x402Price(),
-      facilitator: localFacilitator(),
+      facilitator: fac,
       routeConfig: {
         description: "RemitRoute optimal Mento FX route and live rate",
         mimeType: "application/json",
@@ -87,10 +99,13 @@ export async function GET(request: Request) {
     return Response.json({ error: "settled but no quote" }, { status: 500 });
   }
 
-  // Paid, settled, and quoted: log the activity and return the FX route + rate.
+  // Paid, settled, and quoted: log the activity with the REAL settled tx, payer,
+  // and value (not just the advertised price) so reconcile can verify revenue.
+  const settled = (fac as unknown as { settlement: { last: { transaction: string; payer: string; value: string } | null } }).settlement.last;
   await db.insert(treasuryActions).values({
     strategy: "x402_payment",
     status: "confirmed",
+    txHash: settled?.transaction ?? null,
     detail: {
       resource: "fx-route",
       tokenIn,
@@ -100,6 +115,8 @@ export async function GET(request: Request) {
       rate: fx.rate,
       payTo: x402PayTo(),
       price: config.X402_PRICE,
+      settledValue: settled?.value ?? null,
+      payer: settled?.payer ?? null,
     },
   });
 

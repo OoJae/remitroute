@@ -37,6 +37,28 @@ async function cachedGas(): Promise<GasBufferResult | null> {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Round a (string-encoded) amount down to a single significant figure so the
+// public ticker shows the rough scale of a transfer without disclosing the
+// exact, individually-enumerable value. Null/zero/non-numeric pass through.
+function bucketAmount(raw: string | null): string | null {
+  if (raw == null) return raw;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n === 0) return raw;
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(n))));
+  const bucket = Math.floor(n / mag) * mag;
+  return String(bucket);
+}
+
+// Coarsen a timestamp to the top of the hour (UTC) so transfers cannot be
+// ordered/correlated at second granularity from the public feed.
+function coarseTimestamp(value: Date | string | null): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCMinutes(0, 0, 0);
+  return d.toISOString();
+}
+
 const SCAN_URL = `https://8004scan.io/agents/celo/${config.AGENT_ID ?? ""}`;
 const COMPLETED = sql`status in ('confirmed','success','dry_run')`;
 
@@ -68,7 +90,9 @@ async function onchainReputation(clients: string[]): Promise<OnchainRep> {
 }
 
 export async function GET() {
-  // Activity aggregated by city.
+  // Activity aggregated by city. We also count distinct users per city so we can
+  // enforce k-anonymity below (city groups with fewer than CITY_MIN_USERS distinct
+  // users are not individually identifiable and must be suppressed; pii-1/authz-6).
   const cityRows = await db
     .select({
       city: users.city,
@@ -76,6 +100,7 @@ export async function GET() {
       actions: sql<number>`count(*)::int`,
       completed: sql<number>`count(*) filter (where ${COMPLETED})::int`,
       volume: sql<number>`coalesce(sum(${executions.amountIn}), 0)::float8`,
+      distinctUsers: sql<number>`count(distinct ${executions.userId})::int`,
       lastAt: sql<string>`max(${executions.createdAt})`,
     })
     .from(executions)
@@ -84,14 +109,43 @@ export async function GET() {
     .orderBy(desc(sql`max(${executions.createdAt})`))
     .limit(50);
 
-  const byCity = cityRows.map((r) => ({
-    city: r.city ?? "Unknown",
-    country: r.country ?? null,
-    actions: r.actions,
-    completedRate: r.actions > 0 ? r.completed / r.actions : 0,
-    volume: r.volume,
-    lastAt: r.lastAt,
-  }));
+  // K-anonymity threshold: a city group must contain at least this many distinct
+  // users before it can be shown with a city label and exact volume. Smaller
+  // groups are folded into a single unlabelled "Other" bucket so individual
+  // senders cannot be re-identified from a thinly populated city.
+  const CITY_MIN_USERS = 3;
+
+  const byCity = cityRows
+    .filter((r) => r.distinctUsers >= CITY_MIN_USERS)
+    .map((r) => ({
+      city: r.city ?? "Unknown",
+      country: r.country ?? null,
+      actions: r.actions,
+      completedRate: r.actions > 0 ? r.completed / r.actions : 0,
+      volume: r.volume,
+      lastAt: r.lastAt as string | null,
+    }));
+
+  // Fold every below-threshold city group into one aggregate "Other" bucket with
+  // no city/country label, preserving totals without exposing sparse cities.
+  const suppressed = cityRows.filter((r) => r.distinctUsers < CITY_MIN_USERS);
+  if (suppressed.length > 0) {
+    const actions = suppressed.reduce((s, r) => s + r.actions, 0);
+    const completed = suppressed.reduce((s, r) => s + r.completed, 0);
+    const lastAt = suppressed
+      .map((r) => r.lastAt)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+      .at(-1) ?? null;
+    byCity.push({
+      city: "Other",
+      country: null,
+      actions,
+      completedRate: actions > 0 ? completed / actions : 0,
+      volume: suppressed.reduce((s, r) => s + r.volume, 0),
+      lastAt,
+    });
+  }
 
   // Latest actions with a per-action validation proof.
   const recentRows = await db
@@ -117,12 +171,16 @@ export async function GET() {
     kind: r.kind,
     city: r.city ?? "Unknown",
     status: r.status,
-    amountIn: r.amountIn,
+    // Bucket amounts to 1 significant figure so individual transfers are not
+    // enumerable from the public ticker; keep the token labels for context.
+    amountIn: bucketAmount(r.amountIn),
     tokenIn: r.tokenIn,
-    amountOut: r.amountOut,
+    amountOut: bucketAmount(r.amountOut),
     tokenOut: r.tokenOut,
-    txHash: r.txHash,
-    createdAt: r.createdAt,
+    // Raw txHash removed (pii-1): publishing it lets anyone link a city + kind +
+    // amount to an onchain identity. The proof hash below still binds the full
+    // action (including txHash) for independent verification without disclosing it.
+    createdAt: coarseTimestamp(r.createdAt),
     proof: executionProofHash(r),
   }));
 

@@ -29,7 +29,8 @@ is growing fastest.
 
 ## How it works
 
-1. **Connect in MiniPay.** One tap, no seed phrase, no signing for recurring actions.
+1. **Connect in MiniPay.** One tap, no seed phrase. The app authenticates each session
+   with a MiniPay wallet signature; after that, recurring actions need no further signing.
 2. **Set a rule in plain language.** `/api/parse-rule` turns it into a typed, capped
    schedule and reads it back before anything moves.
 3. **The agent runs it onchain.** A deterministic heartbeat (systemd timer) wakes every
@@ -47,6 +48,7 @@ Real money on mainnet, so it is bounded and provable:
 - **Idempotency** at the database level so a schedule can never double-execute across heartbeats.
 - **Proof hash** per action, a deterministic keccak256 digest anyone can recompute.
 - **Encrypted keys** at rest; `.env` is never committed.
+- **MiniPay-signature auth** on every session, so only the wallet owner can act on their funds.
 
 ## Agent economy (x402)
 

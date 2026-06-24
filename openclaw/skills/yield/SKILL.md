@@ -12,7 +12,7 @@ Puts a user idle stablecoins to work by supplying them to Aave V3 on Celo, and w
 ## When to use
 
 - When `remitroute-core` dispatches a due `savings_sweep`: supply the computed sweep amount.
-- When a user requests a withdrawal from the Mini App or Telegram, or when a downstream action (a remittance) needs funds that are currently in yield: withdraw the needed amount first.
+- When a user requests a withdrawal from the Mini App, or when a downstream action (a remittance) needs funds that are currently in yield: withdraw the needed amount first.
 
 ## Scripts
 

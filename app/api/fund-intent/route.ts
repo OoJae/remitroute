@@ -12,21 +12,20 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const QuerySchema = z.object({
-  user: z.string().uuid(),
   amount: z.string().refine((a) => Number(a) > 0, "amount must be positive"),
 });
 
 export async function GET(request: Request) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const url = new URL(request.url);
-  const parsed = QuerySchema.safeParse({
-    user: url.searchParams.get("user"),
-    amount: url.searchParams.get("amount") ?? "1",
-  });
+  const parsed = QuerySchema.safeParse({ amount: url.searchParams.get("amount") ?? "1" });
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid query" }, { status: 400 });
   }
 
-  const [user] = await db.select().from(users).where(eq(users.id, parsed.data.user));
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) {
     return NextResponse.json({ error: "unknown user" }, { status: 404 });
   }

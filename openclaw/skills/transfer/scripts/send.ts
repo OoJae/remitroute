@@ -21,6 +21,7 @@ import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { reconcileTx } from "../../../../shared/reconcile.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -111,9 +112,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   // Real send. Decrypt the sub-wallet key, send through the fee-abstraction path.
   // Guard: the agent treasury smoke test uses the agent key; user sends use the
   // user sub-wallet key. Here we use the user sub-wallet key reference.
-  const pk = (user.walletKeyRef.startsWith("0x")
-    ? (user.walletKeyRef as Hex)
-    : (decryptKey(user.walletKeyRef) as Hex));
+  const pk = decryptKey(user.walletKeyRef) as Hex;
 
   const wallet = walletClientFor(pk);
   let txHash: string | undefined;
@@ -136,20 +135,24 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error({ err, to: recipient }, "transfer failed");
+    // Reconcile on chain: if the tx was broadcast it may have mined despite this
+    // error, so we never blindly mark it failed (which would let it be retried
+    // and double-send). Only a never-broadcast error yields a retriable "failed".
+    const status = await reconcileTx(txHash);
+    log.error({ err, to: recipient, reconciled: status }, "transfer error; reconciled");
     await recordExecution({
       userId: args.user,
       scheduleId: args.scheduleId,
       cycleId: args.cycleId,
       kind: args.kind,
-      status: "failed",
+      status,
       txHash,
       amountIn: args.amount,
       tokenIn: args.token,
       feeCurrency: config.FEE_CURRENCY,
-      error: message,
+      error: status === "confirmed" ? undefined : message,
     });
-    return { status: "failed", txHash };
+    return { status, txHash };
   }
 }
 

@@ -119,9 +119,7 @@ export async function withdraw(
   }
 
   // Real withdraw. Decrypt the user's sub-wallet key and send via fee abstraction.
-  const pk = (user.walletKeyRef.startsWith("0x")
-    ? (user.walletKeyRef as Hex)
-    : (decryptKey(user.walletKeyRef) as Hex));
+  const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
 
   let txHash: string | undefined;

@@ -11,16 +11,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PatchBody = z.object({
-  user: z.string().uuid(),
   action: z.enum(["pause", "resume"]),
 });
-
-const DeleteBody = z.object({ user: z.string().uuid() });
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await context.params;
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "invalid schedule id" }, { status: 400 });
@@ -34,7 +33,7 @@ export async function PATCH(
   const updated = await db
     .update(schedules)
     .set({ status: nextStatus })
-    .where(and(eq(schedules.id, id), eq(schedules.userId, parsed.data.user)))
+    .where(and(eq(schedules.id, id), eq(schedules.userId, userId)))
     .returning();
 
   if (updated.length === 0) {
@@ -47,19 +46,17 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await context.params;
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "invalid schedule id" }, { status: 400 });
-  }
-  const parsed = DeleteBody.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
   const updated = await db
     .update(schedules)
     .set({ status: "cancelled" })
-    .where(and(eq(schedules.id, id), eq(schedules.userId, parsed.data.user)))
+    .where(and(eq(schedules.id, id), eq(schedules.userId, userId)))
     .returning();
 
   if (updated.length === 0) {

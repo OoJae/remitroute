@@ -13,15 +13,27 @@ export interface RescheduleResult {
   nextRun: Date | null;
 }
 
-// Recompute next_run for a schedule, starting from `from` (default now).
+// Recompute next_run for a schedule. Anchors on the schedule's CURRENT next_run
+// (the scheduled slot), not "now", so a daily/weekly/every cadence does not drift
+// forward a little each cycle. After downtime it catches up by whole intervals
+// past now rather than silently coalescing every missed slot into one.
 export async function reschedule(
   scheduleId: string,
-  from: Date = new Date(),
+  anchorOverride?: Date,
 ): Promise<RescheduleResult> {
   const [row] = await db.select().from(schedules).where(eq(schedules.id, scheduleId));
   if (!row) throw new Error(`unknown schedule ${scheduleId}`);
 
-  const next = computeNextRun(row.cadence, from);
+  const now = new Date();
+  const anchor = anchorOverride ?? row.nextRun ?? now;
+  let next = computeNextRun(row.cadence, anchor);
+
+  // Catch up: advance whole intervals until the next slot is in the future.
+  let guard = 0;
+  while (next !== null && next.getTime() <= now.getTime() && guard < 100000) {
+    next = computeNextRun(row.cadence, next);
+    guard += 1;
+  }
 
   if (next === null) {
     await db.update(schedules).set({ status: "done" }).where(eq(schedules.id, scheduleId));
