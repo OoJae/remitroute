@@ -10,6 +10,8 @@ import { users } from "../../../../shared/db/schema.js";
 import { publicClient } from "../../../../shared/viem.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { swap } from "../../mento-fx/scripts/swap.js";
+import { deriveIntentId } from "../../../../shared/intent.js";
+import { classifyMove, buyBudgetUsd } from "../../../../shared/moveStatus.js";
 import { log } from "../../../../shared/log.js";
 
 const DEFAULT_DRIFT_BPS = 500; // rebalance a leg once it drifts 5 percent off target
@@ -20,11 +22,15 @@ export interface RebalanceOpts {
   slippageBps?: number;
   scheduleId?: string;
   cycleId?: string;
+  // Base idempotency id for this schedule slot; each leg derives a child id.
+  intentId?: string;
 }
 
 export interface RebalanceResult {
   swapsOk: number;
   swapsFailed: number;
+  swapsUnknown: number; // broadcast_unknown legs: never retried, not a failure
+  swapsSkipped: number; // skipped_cap legs: surfaced, not silently swallowed
   volume: number;
 }
 
@@ -42,8 +48,9 @@ export async function rebalance(
   rawTargets: Record<string, number>,
   opts: RebalanceOpts = {},
 ): Promise<RebalanceResult> {
-  const result: RebalanceResult = { swapsOk: 0, swapsFailed: 0, volume: 0 };
+  const result: RebalanceResult = { swapsOk: 0, swapsFailed: 0, swapsUnknown: 0, swapsSkipped: 0, volume: 0 };
   const threshold = opts.driftThresholdBps ?? DEFAULT_DRIFT_BPS;
+  const legIntent = (suffix: string) => (opts.intentId ? deriveIntentId(opts.intentId, suffix) : undefined);
 
   const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) throw new Error(`unknown user ${userId}`);
@@ -112,9 +119,25 @@ export async function rebalance(
       kind: "fx_rebalance",
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
+      intentId: legIntent(`${leg.symbol}>cUSD`),
     });
     tally(result, res.status, sellTokens);
   }
+
+  // Re-read the cUSD balance AFTER the sells so buys are funded only by cUSD
+  // actually available now (realized sell proceeds plus any pre-existing hub above
+  // cUSD's own target). This is the fix for the round-2 finding: when sells are
+  // capped or fail (producing no cUSD), buys can no longer drain the hub the wrong
+  // way, and cUSD is never spent below its target weight.
+  const cusdBalanceUnits = (await publicClient.readContract({
+    address: cusd.address,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [owner],
+  })) as bigint;
+  const cusdNow = Number(formatUnits(cusdBalanceUnits, cusd.decimals));
+  const cusdTargetValue = (targets["cUSD"] ?? 0) * total;
+  let budgetUsd = buyBudgetUsd(cusdNow, cusdTargetValue);
 
   // Buy legs that are under target by more than the threshold, paying in cUSD.
   for (const leg of legs) {
@@ -122,8 +145,14 @@ export async function rebalance(
     const currentWeight = leg.valueUsd / total;
     const driftBps = (leg.target - currentWeight) * 10000;
     if (driftBps <= threshold) continue;
-    const deficitUsd = (leg.target - currentWeight) * total;
+    let deficitUsd = (leg.target - currentWeight) * total;
     if (deficitUsd < DUST_USD) continue;
+    if (budgetUsd < DUST_USD) {
+      log.info({ userId, leg: leg.symbol }, "fx_rebalance: cUSD buy budget exhausted; skipping remaining buys");
+      break;
+    }
+    // Never spend more cUSD than is actually available for buys.
+    deficitUsd = Math.min(deficitUsd, budgetUsd);
     const res = await swap({
       user: userId,
       tokenIn: "cUSD",
@@ -133,7 +162,10 @@ export async function rebalance(
       kind: "fx_rebalance",
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
+      intentId: legIntent(`cUSD>${leg.symbol}`),
     });
+    // Only draw down the budget when cUSD actually left the wallet.
+    if (res.status === "confirmed" || res.status === "dry_run") budgetUsd -= deficitUsd;
     tally(result, res.status, deficitUsd);
   }
 
@@ -141,12 +173,18 @@ export async function rebalance(
   return result;
 }
 
+// Classify each leg via the shared rule so the fx path mirrors run-due's account():
+// broadcast_unknown is never a failure (and must not be retried), skipped_* is
+// surfaced separately, reverted/failed count as a genuine failure.
 function tally(result: RebalanceResult, status: string, amount: number): void {
-  if (status === "confirmed" || status === "dry_run") {
+  const c = classifyMove(status);
+  if (c === "ok") {
     result.swapsOk += 1;
     result.volume += amount;
-  } else if (status === "skipped_cap") {
-    // not counted as ok or failed
+  } else if (c === "unknown") {
+    result.swapsUnknown += 1;
+  } else if (c === "skipped") {
+    result.swapsSkipped += 1;
   } else {
     result.swapsFailed += 1;
   }

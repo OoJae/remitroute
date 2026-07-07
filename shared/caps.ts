@@ -21,13 +21,16 @@ export interface CapDecision {
 // ROLLING window, not a midnight reset, so an attacker cannot spend ~2x the daily
 // cap across the UTC boundary, and the result no longer depends on the DB session
 // timezone. broadcast_unknown counts because that money may have left the wallet.
-const COUNTED_STATUSES = ["confirmed", "success", "sent", "broadcast_unknown"] as const;
+// "pending" counts too: it is a reserved-but-not-yet-confirmed money move (the
+// intent reservation inserts it before broadcast), so counting it closes the
+// window where two concurrent actions both pass the cap before either records.
+const COUNTED_STATUSES = ["confirmed", "success", "sent", "broadcast_unknown", "pending"] as const;
 
 async function sumSince(userId?: string): Promise<number> {
   const windowStart = sql`now() - interval '24 hours'`;
   const filters = [
     gte(executions.createdAt, windowStart as never),
-    sql`${executions.status} in ('confirmed','success','sent','broadcast_unknown')`,
+    sql`${executions.status} in ('confirmed','success','sent','broadcast_unknown','pending')`,
   ];
   if (userId) filters.push(eq(executions.userId, userId));
 

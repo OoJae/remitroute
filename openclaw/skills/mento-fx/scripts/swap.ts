@@ -15,7 +15,8 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
-import { reconcileTx } from "../../../../shared/reconcile.js";
+import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
+import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { log } from "../../../../shared/log.js";
 
@@ -31,6 +32,7 @@ const ArgSchema = z.object({
   kind: z.enum(["dca", "fx_rebalance"]).default("dca"),
   scheduleId: z.string().uuid().optional(),
   cycleId: z.string().uuid().optional(),
+  intentId: z.string().optional(),
 });
 
 export interface SwapArgs {
@@ -42,6 +44,7 @@ export interface SwapArgs {
   kind?: "dca" | "fx_rebalance";
   scheduleId?: string;
   cycleId?: string;
+  intentId?: string;
 }
 
 export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?: string }> {
@@ -134,6 +137,27 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
     return { status: "dry_run" };
   }
 
+  // Reserve the intent before broadcasting so a crash-then-reclaim re-run cannot
+  // double-swap this leg.
+  let pendingId: string | undefined;
+  if (args.intentId) {
+    const id = await reserveIntent({
+      userId: args.user,
+      scheduleId: args.scheduleId,
+      cycleId: args.cycleId,
+      intentId: args.intentId,
+      kind: args.kind,
+      amountIn: args.amountIn,
+      tokenIn: args.tokenIn,
+      tokenOut: args.tokenOut,
+    });
+    if (id === null) {
+      log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate swap");
+      return { status: "skipped_duplicate" };
+    }
+    pendingId = id;
+  }
+
   // Real execution. Approve first if required, then swap. Both pay gas in stablecoin.
   const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
@@ -160,21 +184,25 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       data: built.swap.params.data as Hex,
       feeCurrency,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     log.info({ txHash, status, tokenIn: args.tokenIn, tokenOut: args.tokenOut }, "swap sent");
-    await recordSwap({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amountIn,
-      tokenIn: args.tokenIn,
-      amountOut: outFormatted,
-      tokenOut: args.tokenOut,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash, amountOut: outFormatted });
+    } else {
+      await recordSwap({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amountIn,
+        tokenIn: args.tokenIn,
+        amountOut: outFormatted,
+        tokenOut: args.tokenOut,
+      });
+    }
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -183,18 +211,22 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       { err, tokenIn: args.tokenIn, tokenOut: args.tokenOut, reconciled: status },
       "swap error; reconciled",
     );
-    await recordSwap({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amountIn,
-      tokenIn: args.tokenIn,
-      tokenOut: args.tokenOut,
-      error: status === "confirmed" ? undefined : message,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash, error: status === "confirmed" ? undefined : message });
+    } else {
+      await recordSwap({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amountIn,
+        tokenIn: args.tokenIn,
+        tokenOut: args.tokenOut,
+        error: status === "confirmed" ? undefined : message,
+      });
+    }
     return { status, txHash };
   }
 }

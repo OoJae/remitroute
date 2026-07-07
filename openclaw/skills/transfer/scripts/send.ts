@@ -21,7 +21,8 @@ import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
-import { reconcileTx } from "../../../../shared/reconcile.js";
+import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
+import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -33,6 +34,8 @@ const ArgSchema = z.object({
   // Set when dispatched by the scheduler, so the execution links to its schedule.
   scheduleId: z.string().uuid().optional(),
   cycleId: z.string().uuid().optional(),
+  // Deterministic idempotency key; when set, the broadcast is reserved first.
+  intentId: z.string().optional(),
 });
 
 export interface SendArgs {
@@ -43,6 +46,7 @@ export interface SendArgs {
   kind?: "remittance" | "bill_drip";
   scheduleId?: string;
   cycleId?: string;
+  intentId?: string;
 }
 
 export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?: string }> {
@@ -109,29 +113,50 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
     return { status: "dry_run" };
   }
 
-  // Real send. Decrypt the sub-wallet key, send through the fee-abstraction path.
-  // Guard: the agent treasury smoke test uses the agent key; user sends use the
-  // user sub-wallet key. Here we use the user sub-wallet key reference.
-  const pk = decryptKey(user.walletKeyRef) as Hex;
+  // Reserve the intent BEFORE broadcasting so a crash-then-reclaim re-run of this
+  // schedule slot cannot double-send: if the intent is already reserved, skip.
+  let pendingId: string | undefined;
+  if (args.intentId) {
+    const id = await reserveIntent({
+      userId: args.user,
+      scheduleId: args.scheduleId,
+      cycleId: args.cycleId,
+      intentId: args.intentId,
+      kind: args.kind,
+      amountIn: args.amount,
+      tokenIn: args.token,
+    });
+    if (id === null) {
+      log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate transfer");
+      return { status: "skipped_duplicate" };
+    }
+    pendingId = id;
+  }
 
+  // Real send. Decrypt the user sub-wallet key, send through fee abstraction.
+  const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
   let txHash: string | undefined;
   try {
     txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo });
     log.info({ txHash, to: recipient, amount: args.amount }, "transfer sent");
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
-    await recordExecution({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amount,
-      tokenIn: args.token,
-      feeCurrency: config.FEE_CURRENCY,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash });
+    } else {
+      await recordExecution({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amount,
+        tokenIn: args.token,
+        feeCurrency: config.FEE_CURRENCY,
+      });
+    }
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -140,18 +165,22 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
     // and double-send). Only a never-broadcast error yields a retriable "failed".
     const status = await reconcileTx(txHash);
     log.error({ err, to: recipient, reconciled: status }, "transfer error; reconciled");
-    await recordExecution({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amount,
-      tokenIn: args.token,
-      feeCurrency: config.FEE_CURRENCY,
-      error: status === "confirmed" ? undefined : message,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash, error: status === "confirmed" ? undefined : message });
+    } else {
+      await recordExecution({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amount,
+        tokenIn: args.token,
+        feeCurrency: config.FEE_CURRENCY,
+        error: status === "confirmed" ? undefined : message,
+      });
+    }
     return { status, txHash };
   }
 }

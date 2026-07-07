@@ -36,6 +36,7 @@ import {
   evaluateAnomaly,
 } from "../../../../shared/engine.js";
 import { notify } from "../../../../shared/alerts.js";
+import { computeIntentId } from "../../../../shared/intent.js";
 
 const TRANSFER_KINDS = new Set(["remittance", "bill_drip"]);
 
@@ -178,6 +179,19 @@ export async function runDue(): Promise<CycleSummary> {
     summary.attempted += 1;
     let outcome: Outcome = "ok";
 
+    // Deterministic idempotency key for this schedule slot. Derived from the
+    // PRE-advance next_run, so a crash-then-reclaim re-run of the same slot
+    // recomputes the SAME id and the money script's pre-broadcast reservation
+    // skips the duplicate. Threaded into every money dispatch below.
+    const baseIntent = {
+      scheduleId: sch.id,
+      userId: sch.userId!,
+      kind: sch.kind,
+      params: sch.params,
+      dueSlot: sch.nextRun.toISOString(),
+    };
+    const intentId = computeIntentId(baseIntent);
+
     try {
       if (TRANSFER_KINDS.has(sch.kind)) {
         const params = TransferParams.parse(sch.params);
@@ -193,7 +207,7 @@ export async function runDue(): Promise<CycleSummary> {
               // yield position, to cover this transfer.
               const shortfall = (Number(params.amount) - idle + 0.001).toFixed(6);
               log.info({ scheduleId: sch.id, idle, need: params.amount, shortfall }, "remittance funds short; topping up from yield");
-              await withdraw({ user: sch.userId!, asset: params.token, amount: shortfall, scheduleId: sch.id, cycleId });
+              await withdraw({ user: sch.userId!, asset: params.token, amount: shortfall, scheduleId: sch.id, cycleId, intentId: computeIntentId({ ...baseIntent, suffix: "prewithdraw" }) });
             } catch (e) {
               log.warn({ err: e, scheduleId: sch.id }, "pre-remittance yield withdraw failed; proceeding");
             }
@@ -207,6 +221,7 @@ export async function runDue(): Promise<CycleSummary> {
           kind: sch.kind as "remittance" | "bill_drip",
           scheduleId: sch.id,
           cycleId,
+          intentId,
         });
         outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "dca") {
@@ -220,6 +235,7 @@ export async function runDue(): Promise<CycleSummary> {
           kind: "dca",
           scheduleId: sch.id,
           cycleId,
+          intentId,
         });
         outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "savings_sweep") {
@@ -257,6 +273,7 @@ export async function runDue(): Promise<CycleSummary> {
             kind: "savings_sweep",
             scheduleId: sch.id,
             cycleId,
+            intentId,
           });
           outcome = account(summary, res.status, Number(amount));
         }
@@ -267,15 +284,24 @@ export async function runDue(): Promise<CycleSummary> {
           slippageBps: params.slippageBps,
           scheduleId: sch.id,
           cycleId,
+          intentId,
         });
+        // Only genuine failures count toward the breaker; broadcast_unknown legs
+        // are NOT failures (never retried, may double-swap) and cap-skipped legs
+        // are surfaced, not silently swallowed.
         summary.succeeded += res.swapsOk;
         summary.failed += res.swapsFailed;
         summary.volume += res.volume;
-        if (res.swapsOk === 0 && res.swapsFailed === 0) {
+        if (res.swapsSkipped > 0) {
+          await notify("fx_rebalance had cap-skipped legs; basket may be left unbalanced", { scheduleId: sch.id, skipped: res.swapsSkipped });
+        }
+        if (res.swapsFailed > 0 && res.swapsOk === 0) {
+          outcome = "failed";
+        } else if (res.swapsUnknown > 0 && res.swapsOk === 0 && res.swapsFailed === 0) {
+          outcome = "unknown";
+        } else if (res.swapsOk === 0 && res.swapsFailed === 0 && res.swapsUnknown === 0) {
           summary.skipped += 1;
           outcome = "skipped";
-        } else if (res.swapsOk === 0 && res.swapsFailed > 0) {
-          outcome = "failed";
         }
       } else if (sch.kind === "yield_withdraw") {
         const params = YieldWithdrawParams.parse(sch.params);
@@ -285,6 +311,7 @@ export async function runDue(): Promise<CycleSummary> {
           amount: params.amount,
           scheduleId: sch.id,
           cycleId,
+          intentId,
         });
         outcome = account(summary, res.status, 0);
       } else {

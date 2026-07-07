@@ -7,6 +7,12 @@
 import { publicClient } from "./viem.js";
 import { log } from "./log.js";
 
+// Bound how long a money script waits for a receipt. Without this, viem polls
+// indefinitely, so a broadcast-but-slow tx pins a schedule in "processing" long
+// enough for the reclaim sweep to resurrect it. On timeout the wait throws into
+// reconcileTx, which resolves the tx to confirmed/reverted/broadcast_unknown.
+export const RECEIPT_TIMEOUT_MS = 120_000;
+
 export type Fate = "confirmed" | "reverted" | "broadcast_unknown" | "failed";
 
 export async function reconcileTx(txHash: string | undefined): Promise<Fate> {

@@ -344,6 +344,12 @@ export default function Home() {
       setWithdrawStatus("Your automation wallet is empty, nothing to withdraw.");
     } else if (body.status === "reverted") {
       setWithdrawStatus("The withdrawal reverted onchain. Please try again.");
+    } else if (body.status === "broadcast_unknown") {
+      // The tx was submitted but not yet confirmed. It may still land, so do NOT
+      // prompt a resubmit (that would risk a double withdrawal).
+      setWithdrawStatus("Your withdrawal was submitted and is still confirming. Please do not resubmit; check Activity in a moment.");
+      void loadBalances();
+      void loadActivity();
     } else {
       setWithdrawStatus(body.error ?? "Could not withdraw. Please try again.");
     }

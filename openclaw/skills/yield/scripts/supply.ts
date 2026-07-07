@@ -14,7 +14,8 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
-import { reconcileTx } from "../../../../shared/reconcile.js";
+import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
+import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
 import { log } from "../../../../shared/log.js";
 
@@ -25,6 +26,7 @@ const ArgSchema = z.object({
   scheduleId: z.string().uuid().optional(),
   cycleId: z.string().uuid().optional(),
   kind: z.string().default("savings_sweep"),
+  intentId: z.string().optional(),
 });
 
 export interface SupplyArgs {
@@ -34,6 +36,7 @@ export interface SupplyArgs {
   scheduleId?: string;
   cycleId?: string;
   kind?: string;
+  intentId?: string;
 }
 
 export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txHash?: string }> {
@@ -121,6 +124,26 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
     return { status: "dry_run" };
   }
 
+  // Reserve the intent before broadcasting so a crash-then-reclaim re-run cannot
+  // double-supply.
+  let pendingId: string | undefined;
+  if (args.intentId) {
+    const id = await reserveIntent({
+      userId: args.user,
+      scheduleId: args.scheduleId,
+      cycleId: args.cycleId,
+      intentId: args.intentId,
+      kind: args.kind,
+      amountIn: args.amount,
+      tokenIn: args.asset,
+    });
+    if (id === null) {
+      log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate supply");
+      return { status: "skipped_duplicate" };
+    }
+    pendingId = id;
+  }
+
   const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
   const account = wallet.account!;
@@ -150,35 +173,43 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       args: [token.address, amountUnits, owner, 0],
       feeCurrency,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     log.info({ txHash, status, asset: args.asset, amount: args.amount }, "supply sent");
-    await recordRow({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amount,
-      tokenIn: args.asset,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash });
+    } else {
+      await recordRow({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amount,
+        tokenIn: args.asset,
+      });
+    }
     return { status, txHash };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = await reconcileTx(txHash);
     log.error({ err, asset: args.asset, reconciled: status }, "supply error; reconciled");
-    await recordRow({
-      userId: args.user,
-      scheduleId: args.scheduleId,
-      cycleId: args.cycleId,
-      kind: args.kind,
-      status,
-      txHash,
-      amountIn: args.amount,
-      tokenIn: args.asset,
-      error: status === "confirmed" ? undefined : message,
-    });
+    if (pendingId) {
+      await finalizeExecution(pendingId, { status, txHash, error: status === "confirmed" ? undefined : message });
+    } else {
+      await recordRow({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status,
+        txHash,
+        amountIn: args.amount,
+        tokenIn: args.asset,
+        error: status === "confirmed" ? undefined : message,
+      });
+    }
     return { status, txHash };
   }
 }

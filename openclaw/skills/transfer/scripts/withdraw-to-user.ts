@@ -16,6 +16,7 @@ import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
+import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { log } from "../../../../shared/log.js";
 
 // Tokens a user can withdraw. Gas is always paid in cUSD via fee abstraction.
@@ -126,7 +127,7 @@ export async function withdraw(
   try {
     txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo });
     log.info({ txHash, to, amount: amountStr, token: args.token }, "withdraw sent");
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     await recordExecution({
       userId: args.user,
@@ -138,16 +139,19 @@ export async function withdraw(
     return { status, txHash, amount: amountStr };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error({ err, to }, "withdraw failed");
+    // Reconcile on chain: a broadcast withdraw that merely timed out must never be
+    // recorded "failed" (which invites the user to resubmit and double-debit).
+    const status = await reconcileTx(txHash);
+    log.error({ err, to, reconciled: status }, "withdraw error; reconciled");
     await recordExecution({
       userId: args.user,
-      status: "failed",
+      status,
       txHash,
       amountIn: amountStr,
       tokenIn: args.token,
-      error: message,
+      error: status === "confirmed" ? undefined : message,
     });
-    return { status: "failed", txHash, amount: amountStr };
+    return { status, txHash, amount: amountStr };
   }
 }
 
