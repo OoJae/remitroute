@@ -16,7 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Must match the local toolchain: the repo's settings-only
+          # pnpm-workspace.yaml (no packages field) hard-errors under pnpm 9.
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
