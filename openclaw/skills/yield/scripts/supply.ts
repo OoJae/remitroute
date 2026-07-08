@@ -14,6 +14,7 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
@@ -44,14 +45,16 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
   assertApprovedAsset(args.asset);
   const token = resolveToken(args.asset);
   const amountUnits = parseUnits(args.amount, token.decimals);
-  const amountNum = Number(args.amount);
   const feeCurrency = feeCurrencyAdapter();
 
   const [user] = await db.select().from(users).where(eq(users.id, args.user));
   if (!user) throw new Error(`unknown user ${args.user}`);
   const owner = getAddress(user.walletAddress);
 
-  const cap = await checkCaps(args.user, amountNum);
+  // Value the supplied asset in USD for the USD-denominated caps and the ledger.
+  const usd = await usdValueOf(args.asset, args.amount);
+
+  const cap = await checkCaps(args.user, usd);
   if (!cap.allowed) {
     log.warn({ user: args.user, reason: cap.reason }, "supply skipped: cap breach");
     await recordRow({
@@ -61,6 +64,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       kind: args.kind,
       status: "skipped_cap",
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.asset,
       error: cap.reason ?? "cap breach",
     });
@@ -83,6 +87,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       kind: args.kind,
       status: "skipped_empty",
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.asset,
     });
     return { status: "skipped_empty" };
@@ -119,6 +124,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       kind: args.kind,
       status: "dry_run",
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.asset,
     });
     return { status: "dry_run" };
@@ -135,6 +141,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       intentId: args.intentId,
       kind: args.kind,
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.asset,
     });
     if (id === null) {
@@ -187,6 +194,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         status,
         txHash,
         amountIn: args.amount,
+        usdValue: usd,
         tokenIn: args.asset,
       });
     }
@@ -206,6 +214,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         status,
         txHash,
         amountIn: args.amount,
+        usdValue: usd,
         tokenIn: args.asset,
         error: status === "confirmed" ? undefined : message,
       });
@@ -222,6 +231,7 @@ interface YieldRow {
   status: string;
   txHash?: string;
   amountIn: string;
+  usdValue?: number;
   tokenIn: string;
   error?: string;
 }
@@ -235,6 +245,7 @@ async function recordRow(row: YieldRow): Promise<void> {
     status: row.status,
     txHash: row.txHash ?? null,
     amountIn: row.amountIn,
+    usdValue: row.usdValue != null ? row.usdValue.toString() : null,
     tokenIn: row.tokenIn,
     feeCurrency: config.FEE_CURRENCY,
     error: row.error ?? null,

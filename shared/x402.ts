@@ -11,6 +11,7 @@ import { publicClient, walletClientFor } from "./viem.js";
 import { feeCurrencyAdapter } from "./feeCurrency.js";
 import { db } from "./db/client.js";
 import { x402Nonces } from "./db/schema.js";
+import { reconcileTx } from "./reconcile.js";
 import { log } from "./log.js";
 
 // Tolerance (seconds) when checking the authorization's validity window.
@@ -171,6 +172,11 @@ export function localFacilitator() {
       return fail("replayed_nonce", "this authorization nonce was already used", from);
     }
 
+    // Hoisted so the catch can tell "never broadcast" (undefined) from "broadcast,
+    // then the receipt lookup threw" (defined). Only the former may release the
+    // nonce; releasing it in the latter case would drop the replay guard on money
+    // that may already have moved.
+    let hash: `0x${string}` | undefined;
     try {
       const { r, s, v, yParity } = parseSignature(signature);
       const vNum = v !== undefined ? Number(v) : yParity + 27;
@@ -198,7 +204,7 @@ export function localFacilitator() {
 
       // 4. Broadcast (gas in cUSD via fee abstraction).
       const wallet = walletClientFor(relayerHex);
-      const hash = await wallet.writeContract({ ...callArgs, feeCurrency: feeCurrencyAdapter() });
+      hash = await wallet.writeContract({ ...callArgs, feeCurrency: feeCurrencyAdapter() });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
         // Keep the nonce reserved (the payer must re-sign with a fresh nonce).
@@ -212,13 +218,40 @@ export function localFacilitator() {
       log.info({ hash, payer: from, to, value: value.toString() }, "x402 settled onchain");
       return { success: true as const, transaction: hash, network, payer: from };
     } catch (err) {
-      // Never broadcast (simulate threw or an RPC error): release the nonce so a
-      // transient failure can be retried with the same authorization.
+      const message = (err as Error).message;
+      // No tx hash means nothing was broadcast (bad signature, a failed simulate,
+      // or writeContract itself threw). The EIP-3009 nonce is unused onchain, so
+      // release our reservation and let the caller retry the same authorization.
+      if (hash === undefined) {
+        await db
+          .delete(x402Nonces)
+          .where(and(eq(x402Nonces.payer, payerKey), eq(x402Nonces.nonce, nonceKey)))
+          .catch(() => {});
+        return fail("settlement_error", message, from);
+      }
+      // The tx WAS broadcast and only the receipt lookup threw (e.g. an RPC
+      // timeout). Releasing the nonce here was the bug: the money may have moved.
+      // Keep the reservation, persist the hash, and reconcile on chain.
       await db
-        .delete(x402Nonces)
+        .update(x402Nonces)
+        .set({ txHash: hash })
         .where(and(eq(x402Nonces.payer, payerKey), eq(x402Nonces.nonce, nonceKey)))
         .catch(() => {});
-      return fail("settlement_error", (err as Error).message, from);
+      const fate = await reconcileTx(hash);
+      if (fate === "confirmed") {
+        state.last = { transaction: hash, payer: from, value: value.toString() };
+        log.info({ hash, payer: from, reconciled: fate }, "x402 settled onchain (reconciled after receipt error)");
+        return { success: true as const, transaction: hash, network, payer: from };
+      }
+      if (fate === "reverted") {
+        // Confirmed reverted on chain: the nonce stays reserved (payer must
+        // re-sign with a fresh nonce), same as the in-try reverted path.
+        return fail("settlement_reverted", `tx ${hash} reverted: ${message}`, from, hash);
+      }
+      // broadcast_unknown: the tx may still land. The nonce MUST stay reserved and
+      // this MUST NOT be retried with the same authorization; surface a
+      // non-retriable pending state for the caller to poll.
+      return fail("settlement_pending", `tx ${hash} broadcast; confirmation unknown: ${message}`, from, hash);
     }
   }
 

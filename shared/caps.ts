@@ -1,7 +1,8 @@
-// Daily spend caps. Every money-moving script calls checkCaps before sending.
-// Caps are USD-equivalent whole units; for the hackathon we treat stablecoin
-// amounts as roughly 1:1 with USD, which is correct for cUSD and USDC and a safe
-// upper bound for local-currency legs (they are smaller in USD terms).
+// Daily spend caps. Every money-moving script calls checkCaps before sending,
+// passing the USD-equivalent value of the leg (see shared/usdValue.ts), not the
+// nominal token amount. Caps are USD-equivalent whole units; valuing each leg in
+// USD is what makes that comparison correct for cEUR/CELO (>$1) and cKES/cNGN
+// (<$1) legs alike, rather than the earlier rough 1:1 stablecoin assumption.
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "./db/client.js";
 import { executions } from "./db/schema.js";
@@ -34,8 +35,13 @@ async function sumSince(userId?: string): Promise<number> {
   ];
   if (userId) filters.push(eq(executions.userId, userId));
 
+  // Sum USD-equivalent value, not nominal token units. usd_value is populated by
+  // usdValueOf at reserve/record time; legacy rows that predate it fall back to
+  // amount_in so the window total never silently drops to zero on migration.
   const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${executions.amountIn}), 0)::float8` })
+    .select({
+      total: sql<number>`coalesce(sum(coalesce(${executions.usdValue}, ${executions.amountIn})), 0)::float8`,
+    })
     .from(executions)
     .where(and(...filters));
   return row?.total ?? 0;

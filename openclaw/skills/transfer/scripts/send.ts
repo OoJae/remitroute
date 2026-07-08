@@ -12,15 +12,16 @@ import {
   type Hex,
 } from "viem";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "../../../../shared/db/client.js";
-import { users, executions } from "../../../../shared/db/schema.js";
+import { users, executions, recipients } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { log } from "../../../../shared/log.js";
@@ -54,15 +55,46 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   const token = resolveToken(args.token);
   const recipient = getAddress(args.to);
   const amountUnits = parseUnits(args.amount, token.decimals);
-  const amountNum = Number(args.amount);
   const feeCurrency = feeCurrencyAdapter();
 
   // Resolve the funding sub-wallet for this user.
   const [user] = await db.select().from(users).where(eq(users.id, args.user));
   if (!user) throw new Error(`unknown user ${args.user}`);
 
+  // Recipient allowlist (user-to-user transfers only). A remittance/bill_drip may
+  // only pay an address the user confirmed through the authenticated schedule
+  // create flow (recipients table); an unknown recipient is skipped, never paid,
+  // so a corrupted or tampered schedule row cannot misdirect funds. dca, savings,
+  // and withdraw are not user-to-user transfers and are exempt.
+  if (args.kind === "remittance" || args.kind === "bill_drip") {
+    const [allowed] = await db
+      .select({ id: recipients.id })
+      .from(recipients)
+      .where(and(eq(recipients.userId, args.user), sql`lower(${recipients.address}) = lower(${args.to})`))
+      .limit(1);
+    if (!allowed) {
+      log.warn({ user: args.user, to: recipient }, "transfer skipped: recipient not on allowlist");
+      await recordExecution({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        kind: args.kind,
+        status: "skipped_no_recipient",
+        amountIn: args.amount,
+        tokenIn: args.token,
+        feeCurrency: config.FEE_CURRENCY,
+        error: "recipient not on user allowlist",
+      });
+      return { status: "skipped_no_recipient" };
+    }
+  }
+
+  // Value the leg in USD so caps (which are USD-denominated) compare correctly
+  // for non-1:1 tokens, and record that value on the ledger row.
+  const usd = await usdValueOf(args.token, args.amount);
+
   // Caps first. Skip and log if a cap would be breached.
-  const cap = await checkCaps(args.user, amountNum);
+  const cap = await checkCaps(args.user, usd);
   if (!cap.allowed) {
     log.warn({ user: args.user, reason: cap.reason }, "transfer skipped: cap breach");
     await recordExecution({
@@ -72,6 +104,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       kind: args.kind,
       status: "skipped_cap",
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.token,
       feeCurrency: config.FEE_CURRENCY,
       error: cap.reason ?? "cap breach",
@@ -107,6 +140,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       kind: args.kind,
       status: "dry_run",
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.token,
       feeCurrency: config.FEE_CURRENCY,
     });
@@ -124,6 +158,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       intentId: args.intentId,
       kind: args.kind,
       amountIn: args.amount,
+      usdValue: usd,
       tokenIn: args.token,
     });
     if (id === null) {
@@ -153,6 +188,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         status,
         txHash,
         amountIn: args.amount,
+        usdValue: usd,
         tokenIn: args.token,
         feeCurrency: config.FEE_CURRENCY,
       });
@@ -176,6 +212,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         status,
         txHash,
         amountIn: args.amount,
+        usdValue: usd,
         tokenIn: args.token,
         feeCurrency: config.FEE_CURRENCY,
         error: status === "confirmed" ? undefined : message,
@@ -193,6 +230,7 @@ interface ExecutionRow {
   status: string;
   txHash?: string;
   amountIn: string;
+  usdValue?: number;
   tokenIn: string;
   feeCurrency: string;
   error?: string;
@@ -207,6 +245,7 @@ async function recordExecution(row: ExecutionRow): Promise<void> {
     status: row.status,
     txHash: row.txHash ?? null,
     amountIn: row.amountIn,
+    usdValue: row.usdValue != null ? row.usdValue.toString() : null,
     tokenIn: row.tokenIn,
     feeCurrency: row.feeCurrency,
     error: row.error ?? null,

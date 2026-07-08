@@ -16,6 +16,9 @@ export interface ReserveParams {
   intentId: string;
   kind: string;
   amountIn?: string | null;
+  // USD-equivalent value of this move (usdValueOf); the reserved pending row
+  // carries it so caps count USD from the moment the intent is reserved.
+  usdValue?: number | null;
   tokenIn?: string;
   tokenOut?: string;
 }
@@ -32,6 +35,7 @@ export async function reserveIntent(p: ReserveParams): Promise<string | null> {
       kind: p.kind,
       status: "pending",
       amountIn: p.amountIn ?? null,
+      usdValue: p.usdValue != null ? p.usdValue.toString() : null,
       tokenIn: p.tokenIn ?? null,
       tokenOut: p.tokenOut ?? null,
       feeCurrency: config.FEE_CURRENCY,

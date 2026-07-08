@@ -28,7 +28,7 @@ Executes scheduled stablecoin transfers: remittances (for example sending cNGN t
 ## Guardrails
 
 - Enforce the per-user and global daily spend caps before sending. Skip and log if a cap would be breached.
-- Validate the recipient address. For remittances, check it against the user recipient allowlist set during onboarding, so a parsing error cannot send funds to the wrong place.
+- Validate the recipient address. For remittances and bill drips, `send.ts` checks it against the per-user recipient allowlist (the `recipients` table, populated when a schedule is confirmed through the authenticated create flow) and skips any address not on the list, so a corrupted schedule row or parsing error cannot send funds to the wrong place.
 - Resolve the token address from `shared/addresses.ts` only. Never accept a raw address from model output.
 - Set `feeCurrency` on the transaction. Never send without it.
 - Respect the per-schedule lock so a transfer cannot fire twice in one cycle.

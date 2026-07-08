@@ -35,7 +35,7 @@ import {
   recordCycle,
   evaluateAnomaly,
 } from "../../../../shared/engine.js";
-import { notify } from "../../../../shared/alerts.js";
+import { notify, pingDeadman } from "../../../../shared/alerts.js";
 import { computeIntentId } from "../../../../shared/intent.js";
 
 const TRANSFER_KINDS = new Set(["remittance", "bill_drip"]);
@@ -406,11 +406,13 @@ export async function runDue(): Promise<CycleSummary> {
   // Guardian 9: persist the cycle to the audit trail and trip the circuit
   // breaker on an anomaly (too many failures). Once halted it stays halted until
   // an operator clears it with engine-control --resume.
+  let breakerTripped = false;
   try {
     await recordCycle(summary, false);
     const haltReason = evaluateAnomaly(summary);
     if (haltReason) {
       await haltEngine(haltReason);
+      breakerTripped = true;
       log.error({ cycleId, failed: summary.failed }, haltReason);
     }
   } catch (err) {
@@ -439,6 +441,15 @@ export async function runDue(): Promise<CycleSummary> {
     },
     "heartbeat cycle summary",
   );
+
+  // Dead-man liveness ping: fire only on a genuinely healthy cycle, so an external
+  // watchdog (healthchecks.io etc.) treats a stalled engine OR a just-tripped
+  // breaker as an alert. The early-return abort paths never reach here, so
+  // summary.aborted is already false; the breaker guard covers the anomaly halt.
+  // No-ops without DEADMAN_PING_URL and never throws.
+  if (!summary.aborted && !breakerTripped) {
+    await pingDeadman();
+  }
   return summary;
 }
 

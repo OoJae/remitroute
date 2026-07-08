@@ -15,6 +15,7 @@ import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js"
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
+import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
@@ -54,13 +55,16 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
   const tokenIn = await resolveMentoToken(args.tokenIn, mento);
   const tokenOut = await resolveMentoToken(args.tokenOut, mento);
   const amountInUnits = parseUnits(args.amountIn, tokenIn.decimals);
-  const amountNum = Number(args.amountIn);
 
   const [user] = await db.select().from(users).where(eq(users.id, args.user));
   if (!user) throw new Error(`unknown user ${args.user}`);
 
+  // Value the spent leg (tokenIn) in USD so the USD-denominated caps compare
+  // correctly for non-1:1 tokens, and record that value on the ledger row.
+  const usd = await usdValueOf(args.tokenIn, args.amountIn);
+
   // Caps first.
-  const cap = await checkCaps(args.user, amountNum);
+  const cap = await checkCaps(args.user, usd);
   if (!cap.allowed) {
     log.warn({ user: args.user, reason: cap.reason }, "swap skipped: cap breach");
     await recordSwap({
@@ -70,6 +74,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       kind: args.kind,
       status: "skipped_cap",
       amountIn: args.amountIn,
+      usdValue: usd,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
       error: cap.reason ?? "cap breach",
@@ -130,6 +135,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       kind: args.kind,
       status: "dry_run",
       amountIn: args.amountIn,
+      usdValue: usd,
       tokenIn: args.tokenIn,
       amountOut: outFormatted,
       tokenOut: args.tokenOut,
@@ -148,6 +154,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       intentId: args.intentId,
       kind: args.kind,
       amountIn: args.amountIn,
+      usdValue: usd,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
     });
@@ -198,6 +205,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         status,
         txHash,
         amountIn: args.amountIn,
+        usdValue: usd,
         tokenIn: args.tokenIn,
         amountOut: outFormatted,
         tokenOut: args.tokenOut,
@@ -222,6 +230,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         status,
         txHash,
         amountIn: args.amountIn,
+        usdValue: usd,
         tokenIn: args.tokenIn,
         tokenOut: args.tokenOut,
         error: status === "confirmed" ? undefined : message,
@@ -239,6 +248,7 @@ interface SwapRow {
   status: string;
   txHash?: string;
   amountIn: string;
+  usdValue?: number;
   tokenIn: string;
   amountOut?: string;
   tokenOut: string;
@@ -254,6 +264,7 @@ async function recordSwap(row: SwapRow): Promise<void> {
     status: row.status,
     txHash: row.txHash ?? null,
     amountIn: row.amountIn,
+    usdValue: row.usdValue != null ? row.usdValue.toString() : null,
     tokenIn: row.tokenIn,
     amountOut: row.amountOut ?? null,
     tokenOut: row.tokenOut,

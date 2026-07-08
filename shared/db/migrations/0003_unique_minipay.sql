@@ -3,19 +3,19 @@
 --
 -- Defensive dedupe first: if a concurrent double-onboard ever created more than
 -- one row for the same minipay_address, keep the row that actually holds the
--- user's data and delete the empty orphan(s). Per address, rank rows so the one
--- with schedules or executions wins (then earliest, then lowest id), and delete
--- only the non-winning rows that have NO schedules and NO executions, so we
--- never destroy data and never drop the last row. If two rows both hold data,
--- the index creation below fails loudly for a manual merge. Deletes nothing in
--- normal operation.
+-- user's data and detach the empty orphan(s). Partition CASE-INSENSITIVELY
+-- (lower(minipay_address)) so this bridges to 0004's lower() unique index: two
+-- case-variant rows (0xAbc / 0xabc) are treated as the same address here, so
+-- 0004 can never find a residual case-variant collision. Per address, rank rows
+-- so the one with schedules or executions wins (then earliest, then lowest id).
+-- Non-destructive (see below). Deletes nothing in normal operation.
 WITH ranked AS (
   SELECT
     u.id,
     (EXISTS (SELECT 1 FROM schedules s WHERE s.user_id = u.id)
        OR EXISTS (SELECT 1 FROM executions e WHERE e.user_id = u.id)) AS has_activity,
     row_number() OVER (
-      PARTITION BY u.minipay_address
+      PARTITION BY lower(u.minipay_address)
       ORDER BY
         (CASE WHEN EXISTS (SELECT 1 FROM schedules s WHERE s.user_id = u.id)
                 OR EXISTS (SELECT 1 FROM executions e WHERE e.user_id = u.id)
