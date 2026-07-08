@@ -1,6 +1,12 @@
+# pnpm 10+ blocks dependency build scripts unless approved here. These five are
+# the repo's only deps with postinstall scripts, all standard native modules
+# that ship prebuilt binaries (no compile in practice): esbuild (vitest/tsx),
+# keccak (ethereum hashing), sharp (image processing), bufferutil and
+# utf-8-validate (ws performance addons). A fresh `pnpm install` (CI, a new
+# clone) FAILS with ERR_PNPM_IGNORED_BUILDS if any is left unapproved.
 allowBuilds:
-  bufferutil: set this to true or false
-  esbuild: set this to true or false
-  keccak: set this to true or false
-  sharp: set this to true or false
-  utf-8-validate: set this to true or false
+  bufferutil: true
+  esbuild: true
+  keccak: true
+  sharp: true
+  utf-8-validate: true
