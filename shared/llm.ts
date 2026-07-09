@@ -37,7 +37,10 @@ export async function parseStructured(system: string, user: string): Promise<unk
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const res = await c.messages.create({
       model: config.MIMO_MODEL,
-      max_tokens: 1024,
+      // Sized for the largest structured outputs we request (multi-question
+      // askbots feedback with several freeform answers); rule parsing uses far
+      // less. Too small truncates mid-JSON and burns the retry.
+      max_tokens: 2048,
       system,
       messages,
     });

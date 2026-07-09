@@ -26,11 +26,18 @@ interface Question {
 }
 
 interface Project {
-  id: string;
+  // The API serves Convex-style documents, so the identifier may arrive as
+  // either `id` or `_id`; projectId() normalizes.
+  id?: string;
+  _id?: string;
   name: string;
   propertyType: string;
   propertyUrl: string;
   questions: Question[];
+}
+
+function projectId(p: Project): string | undefined {
+  return p.id ?? p._id;
 }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -44,11 +51,11 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-async function alreadyAnswered(projectId: string): Promise<boolean> {
+async function alreadyAnswered(pid: string): Promise<boolean> {
   const rows = await db
     .select({ id: treasuryActions.id })
     .from(treasuryActions)
-    .where(sql`strategy = 'askbots_feedback' and detail->>'projectId' = ${projectId}`)
+    .where(sql`strategy = 'askbots_feedback' and detail->>'projectId' = ${pid}`)
     .limit(1);
   return rows.length > 0;
 }
@@ -114,10 +121,10 @@ export function solveMath(prompt: string): string {
   return parseExpr().toString();
 }
 
-async function answerProject(project: Project): Promise<boolean> {
-  const detail = await api(`/projects/${project.id}`);
+async function answerProject(pid: string, project: Project): Promise<boolean> {
+  const detail = await api(`/projects/${pid}`);
   if (!detail.ok) {
-    log.warn({ projectId: project.id, status: detail.status }, "askbots: project detail fetch failed");
+    log.warn({ projectId: pid, status: detail.status }, "askbots: project detail fetch failed");
     return false;
   }
   const full = (await detail.json()) as { questions?: Question[]; propertyUrl?: string; propertyType?: string; name?: string };
@@ -145,33 +152,33 @@ async function answerProject(project: Project): Promise<boolean> {
   const parsed = (await parseStructured(system, user)) as { answers?: Array<{ questionId: string; answer: string }> };
   const answers = parsed?.answers;
   if (!Array.isArray(answers) || answers.length !== questions.length) {
-    log.warn({ projectId: project.id, got: answers?.length, want: questions.length }, "askbots: LLM answer shape mismatch; skipping");
+    log.warn({ projectId: pid, got: answers?.length, want: questions.length }, "askbots: LLM answer shape mismatch; skipping");
     return false;
   }
 
-  const respond = await api(`/projects/${project.id}/respond`, {
+  const respond = await api(`/projects/${pid}/respond`, {
     method: "POST",
     body: JSON.stringify({ answers }),
   });
   if (respond.status === 409) {
-    log.info({ projectId: project.id }, "askbots: already responded (409); recording dedupe");
+    log.info({ projectId: pid }, "askbots: already responded (409); recording dedupe");
     await db.insert(treasuryActions).values({
       strategy: "askbots_feedback",
       status: "duplicate",
-      detail: { projectId: project.id, name: project.name },
+      detail: { projectId: pid, name: project.name },
     });
     return false;
   }
   if (!respond.ok) {
     const body = await respond.text().catch(() => "");
-    log.warn({ projectId: project.id, status: respond.status, body: body.slice(0, 200) }, "askbots: respond failed");
+    log.warn({ projectId: pid, status: respond.status, body: body.slice(0, 200) }, "askbots: respond failed");
     return false;
   }
   const challenge = (await respond.json()) as { challengeId: string; prompt: string; timeoutMs: number };
 
   // Solve and verify immediately; the window is 2 seconds from issue.
   const answer = solveMath(challenge.prompt);
-  const verify = await api(`/projects/${project.id}/verify-challenge`, {
+  const verify = await api(`/projects/${pid}/verify-challenge`, {
     method: "POST",
     body: JSON.stringify({ challengeId: challenge.challengeId, answer }),
   });
@@ -183,7 +190,7 @@ async function answerProject(project: Project): Promise<boolean> {
     error?: string;
   };
   if (!verify.ok || !result.passed) {
-    log.warn({ projectId: project.id, result }, "askbots: challenge failed");
+    log.warn({ projectId: pid, result }, "askbots: challenge failed");
     return false;
   }
 
@@ -192,7 +199,7 @@ async function answerProject(project: Project): Promise<boolean> {
     status: "confirmed",
     txHash: result.txHash ?? null,
     detail: {
-      projectId: project.id,
+      projectId: pid,
       name: full.name ?? project.name,
       propertyType: full.propertyType ?? project.propertyType,
       payout: result.payout ?? "0.10",
@@ -200,7 +207,7 @@ async function answerProject(project: Project): Promise<boolean> {
       questionsAnswered: answers.length,
     },
   });
-  log.info({ projectId: project.id, payout: result.payout, txHash: result.txHash }, "askbots: paid feedback delivered");
+  log.info({ projectId: pid, payout: result.payout, txHash: result.txHash }, "askbots: paid feedback delivered");
   return true;
 }
 
@@ -222,11 +229,16 @@ async function main(): Promise<void> {
   let answered = 0;
   for (const project of projects) {
     if (answered >= MAX_PER_RUN) break;
-    if (await alreadyAnswered(project.id)) continue;
+    const pid = projectId(project);
+    if (!pid) {
+      log.warn({ project: project.name }, "askbots: project without an id; skipping");
+      continue;
+    }
+    if (await alreadyAnswered(pid)) continue;
     try {
-      if (await answerProject(project)) answered += 1;
+      if (await answerProject(pid, project)) answered += 1;
     } catch (err) {
-      log.warn({ err, projectId: project.id }, "askbots: project attempt failed");
+      log.warn({ err, projectId: pid }, "askbots: project attempt failed");
     }
   }
   log.info({ answered }, "askbots run complete");
