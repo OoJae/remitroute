@@ -17,4 +17,6 @@ export const REGISTRATION_TEMPLATE: RegistrationDoc = {
     { name: "x402", endpoint: "https://<YOUR_DOMAIN>/api/fx-route" },
   ],
   supportedTrust: ["reputation", "validation"],
+  // Opt-in Aigora marketplace discovery tag (self-declared; safe for all readers).
+  onAigora: true,
 };

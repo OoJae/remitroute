@@ -13,6 +13,9 @@ export interface RegistrationDoc {
   services: Array<{ name: string; endpoint: string; version?: string }>;
   registrations?: Array<{ agentId: number; agentRegistry: string }>;
   supportedTrust: string[];
+  // Opt-in Aigora marketplace discovery tag (self-declared; unknown keys are
+  // ignored by other ERC-8004 readers, so this is safe to carry everywhere).
+  onAigora?: boolean;
 }
 
 // owner is the agent wallet address that registers and owns the identity.
