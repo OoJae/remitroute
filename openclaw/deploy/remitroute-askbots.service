@@ -1,0 +1,18 @@
+# AskBots feedback worker: one run answers up to ASKBOTS_MAX_PER_RUN open
+# feedback projects on askbots.ai and earns USDT to the profile's Celo address.
+# Spends nothing; fully separate from the money engine. Paired with
+# remitroute-askbots.timer. Install to /etc/systemd/system/ on the VPS.
+
+[Unit]
+Description=RemitRoute askbots feedback worker (one run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/askbots/scripts/work.ts
+TimeoutStartSec=600

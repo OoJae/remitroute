@@ -1,0 +1,16 @@
+# Fire the askbots feedback worker every 30 minutes. Daily response limits are
+# enforced server-side by askbots (and ASKBOTS_MAX_PER_RUN per run), so the
+# timer cadence only controls how quickly new projects are picked up.
+
+[Unit]
+Description=RemitRoute askbots worker every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=120
+Unit=remitroute-askbots.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
