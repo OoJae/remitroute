@@ -1,0 +1,24 @@
+# x402 traffic engine: a long-running loop of real pay-per-request x402
+# payments against the live fx-route endpoint (payer = monitoring wallet,
+# settled onchain with the attribution suffix). Gated by X402_TRAFFIC_ENABLED
+# and self-stops at X402_TRAFFIC_END (the hackathon counting deadline). A clean
+# exit (disabled or deadline reached) stays stopped; only failures restart.
+# Isolated from the heartbeat engine. Install to /etc/systemd/system/ on the VPS.
+
+[Unit]
+Description=RemitRoute x402 traffic engine (paid fx-route loop)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/x402-service/scripts/traffic.ts
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target
