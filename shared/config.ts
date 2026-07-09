@@ -123,6 +123,15 @@ const schema = z.object({
 
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
 
+  // ERC-8021 attribution code assigned at hackathon registration (celo_ + 12
+  // hex). When set, every transaction the agent broadcasts carries it as a
+  // calldata suffix so on-chain volume and x402 payments are credited to
+  // RemitRoute on the attribution leaderboards. Unset = no suffix, no-op.
+  ATTRIBUTION_TAG: z
+    .string()
+    .regex(/^[a-z0-9_]{1,32}$/, "ATTRIBUTION_TAG must be 1-32 chars of [a-z0-9_]")
+    .optional(),
+
   // --- Security + ops (added in the hardening pass) ---
   // HMAC secret for signed session cookies. MUST be distinct from ENCRYPTION_KEY
   // (never reuse the wallet-encryption key for sessions). 32+ random bytes hex.

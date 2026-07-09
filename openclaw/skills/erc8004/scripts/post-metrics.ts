@@ -18,6 +18,7 @@ import {
   reputationRegistryAbi,
   ZERO_HASH,
 } from "../../../../shared/erc8004.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 interface Metric {
@@ -120,6 +121,7 @@ export async function postMetrics(): Promise<PostMetricsResult> {
         functionName: "giveFeedback",
         args: [agentId, m.value, m.decimals, m.tag, "", "", "", ZERO_HASH],
         nonce: startNonce + i,
+        dataSuffix: attributionSuffix(),
         ...erc8004FeeOpts(),
       });
       await erc8004PublicClient.waitForTransactionReceipt({ hash });

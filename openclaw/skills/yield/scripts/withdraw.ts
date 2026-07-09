@@ -17,6 +17,7 @@ import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi, MAX_UINT256 } from "../../../../shared/aave.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -109,6 +110,7 @@ export async function withdraw(rawArgs: WithdrawArgs): Promise<{ status: string;
       functionName: "withdraw",
       args: [token.address, amountUnits, to],
       feeCurrency,
+      dataSuffix: attributionSuffix(),
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

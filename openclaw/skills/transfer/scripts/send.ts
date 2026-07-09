@@ -24,6 +24,7 @@ import { checkCaps } from "../../../../shared/caps.js";
 import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -173,7 +174,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   const wallet = walletClientFor(pk);
   let txHash: string | undefined;
   try {
-    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo });
+    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix() });
     log.info({ txHash, to: recipient, amount: args.amount }, "transfer sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

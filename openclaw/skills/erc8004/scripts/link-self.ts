@@ -20,6 +20,7 @@ import {
 } from "../../../../shared/erc8004.js";
 import { pinJson } from "../../../../shared/ipfs.js";
 import { buildRegistration } from "../../../../shared/registration.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { db, pool } from "../../../../shared/db/client.js";
 import { treasuryActions } from "../../../../shared/db/schema.js";
 import { log } from "../../../../shared/log.js";
@@ -92,6 +93,7 @@ async function main(execute: boolean): Promise<void> {
     abi: identityRegistryAbi,
     functionName: "setAgentURI",
     args: [BigInt(config.AGENT_ID), agentURI],
+    dataSuffix: attributionSuffix(),
     ...erc8004FeeOpts(),
   });
   await erc8004PublicClient.waitForTransactionReceipt({ hash });

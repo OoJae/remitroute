@@ -17,6 +17,7 @@ import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 // Tokens a user can withdraw. Gas is always paid in cUSD via fee abstraction.
@@ -125,7 +126,7 @@ export async function withdraw(
 
   let txHash: string | undefined;
   try {
-    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo });
+    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix() });
     log.info({ txHash, to, amount: amountStr, token: args.token }, "withdraw sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

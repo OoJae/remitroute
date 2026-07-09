@@ -10,6 +10,7 @@ import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 const MAX_CUSD = 5; // hard safety ceiling
@@ -40,6 +41,7 @@ async function main(toArg: string, amountArg: string, execute: boolean): Promise
     functionName: "transfer",
     args: [to, units],
     feeCurrency: feeCurrencyAdapter(),
+    dataSuffix: attributionSuffix(),
     account: wallet.account!,
     chain: celo,
   });

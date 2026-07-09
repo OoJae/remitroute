@@ -18,6 +18,7 @@ import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -166,6 +167,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         functionName: "approve",
         args: [poolAddress, amountUnits],
         feeCurrency,
+        dataSuffix: attributionSuffix(),
       });
       await publicClient.waitForTransactionReceipt({ hash: approvalHash });
       log.info({ approvalHash, asset: args.asset }, "Aave pool allowance approved");
@@ -179,6 +181,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       functionName: "supply",
       args: [token.address, amountUnits, owner, 0],
       feeCurrency,
+      dataSuffix: attributionSuffix(),
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

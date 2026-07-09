@@ -18,6 +18,7 @@ import {
   reputationRegistryAbi,
   ZERO_HASH,
 } from "../../../../shared/erc8004.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 export interface FeedbackArgs {
@@ -45,6 +46,7 @@ export async function submitFeedback(args: FeedbackArgs): Promise<{ txHash: stri
     abi: reputationRegistryAbi,
     functionName: "giveFeedback",
     args: [agentId, BigInt(args.score), 0, args.tag, "", "", args.feedbackURI ?? "", ZERO_HASH],
+    dataSuffix: attributionSuffix(),
     ...erc8004FeeOpts(),
   });
   await erc8004PublicClient.waitForTransactionReceipt({ hash });

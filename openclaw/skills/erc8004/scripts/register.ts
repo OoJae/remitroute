@@ -18,6 +18,7 @@ import {
 import { erc8004Chain } from "../../../../shared/erc8004.js";
 import { pinJson } from "../../../../shared/ipfs.js";
 import { buildRegistration } from "../../../../shared/registration.js";
+import { attributionSuffix } from "../../../../shared/attribution.js";
 import { db, pool } from "../../../../shared/db/client.js";
 import { treasuryActions } from "../../../../shared/db/schema.js";
 import { log } from "../../../../shared/log.js";
@@ -58,6 +59,7 @@ async function main(execute: boolean): Promise<void> {
     abi: identityRegistryAbi,
     functionName: "register",
     args: [agentURI],
+    dataSuffix: attributionSuffix(),
     ...erc8004FeeOpts(),
   });
   log.info({ hash }, "register tx sent");

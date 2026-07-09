@@ -12,6 +12,7 @@ import { feeCurrencyAdapter } from "./feeCurrency.js";
 import { db } from "./db/client.js";
 import { x402Nonces } from "./db/schema.js";
 import { reconcileTx } from "./reconcile.js";
+import { attributionSuffix } from "./attribution.js";
 import { log } from "./log.js";
 
 // Tolerance (seconds) when checking the authorization's validity window.
@@ -202,9 +203,10 @@ export function localFacilitator() {
       // 3. Pre-simulate so a bad signature / insufficient balance never costs gas.
       await publicClient.simulateContract(callArgs);
 
-      // 4. Broadcast (gas in cUSD via fee abstraction).
+      // 4. Broadcast (gas in cUSD via fee abstraction). The attribution suffix
+      // marks each settlement as a RemitRoute x402 payment on-chain.
       const wallet = walletClientFor(relayerHex);
-      hash = await wallet.writeContract({ ...callArgs, feeCurrency: feeCurrencyAdapter() });
+      hash = await wallet.writeContract({ ...callArgs, feeCurrency: feeCurrencyAdapter(), dataSuffix: attributionSuffix() });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
         // Keep the nonce reserved (the payer must re-sign with a fresh nonce).

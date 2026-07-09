@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
+    "@celo/attribution-tags": "^0.3.0",
     "@mento-protocol/mento-sdk": "^3.2.8",
     "@selfxyz/agent-sdk": "^0.2.1",
     "@tanstack/react-query": "^5.62.0",

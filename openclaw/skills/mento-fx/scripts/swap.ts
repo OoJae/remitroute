@@ -19,6 +19,7 @@ import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
+import { withAttribution } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
 // Maximum slippage we ever allow, regardless of requested value.
@@ -177,7 +178,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         account,
         chain: celo,
         to: getAddress(built.approval.to),
-        data: built.approval.data as Hex,
+        data: withAttribution(built.approval.data as Hex),
         feeCurrency,
       });
       await publicClient.waitForTransactionReceipt({ hash: approvalHash });
@@ -188,7 +189,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       account,
       chain: celo,
       to: getAddress(built.swap.params.to),
-      data: built.swap.params.data as Hex,
+      data: withAttribution(built.swap.params.data as Hex),
       feeCurrency,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
