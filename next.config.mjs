@@ -4,8 +4,19 @@ const nextConfig = {
   // pino and pg are server-only; keep them out of the client bundle. thirdweb is
   // heavy and well-formed ESM, so keep it external. The Mento SDK must be bundled
   // by webpack (its esm build omits import extensions, which Node's external ESM
-  // loader rejects but webpack resolves), so it is NOT in this list.
-  serverExternalPackages: ["pino", "pg", "langfuse", "thirdweb"],
+  // loader rejects but webpack resolves), so it is NOT in this list. The Celo
+  // SocialConnect stack (identity/contractkit/web3 legacy CJS + a WASM BLS lib)
+  // must stay external too: webpack cannot bundle it cleanly.
+  serverExternalPackages: [
+    "pino",
+    "pg",
+    "langfuse",
+    "thirdweb",
+    "@celo/identity",
+    "@celo/contractkit",
+    "web3",
+    "blind-threshold-bls",
+  ],
   // Serve the static brand/marketing pages (in public/site/) at clean routes,
   // and the ERC-8004 registration file at the well-known path. beforeFiles runs
   // ahead of filesystem + dynamic routes, so "/" maps to the landing page now

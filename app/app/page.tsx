@@ -150,6 +150,9 @@ export default function Home() {
   const [goalTarget, setGoalTarget] = useState("");
   const [goalLockDays, setGoalLockDays] = useState("");
   const [goalStatus, setGoalStatus] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [resolvedAddr, setResolvedAddr] = useState("");
+  const [resolveStatus, setResolveStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -239,6 +242,9 @@ export default function Home() {
     setRuleText("");
     setParsedRule(null);
     setRecipientAddr("");
+    setRecipientPhone("");
+    setResolvedAddr("");
+    setResolveStatus("");
     setStatus("");
     setRuleStatus("");
     setWithdrawStatus("");
@@ -540,7 +546,7 @@ export default function Home() {
     const params = { ...parsedRule.params };
     if (parsedRule.needsRecipientResolution) {
       if (!recipientAddr.startsWith("0x") || recipientAddr.length !== 42) {
-        setRuleStatus("Enter a valid recipient address to confirm.");
+        setRuleStatus("Find the recipient by phone number, or paste their wallet address.");
         return;
       }
       (params as { to?: string }).to = recipientAddr;
@@ -554,6 +560,11 @@ export default function Home() {
         params,
         cadence: parsedRule.cadence,
         nextRun: parsedRule.nextRun,
+        // When the address came from a phone lookup, keep the number as the
+        // recipient's label so the allowlist stays human-readable.
+        ...(resolvedAddr && resolvedAddr === recipientAddr && recipientPhone
+          ? { recipientLabel: recipientPhone }
+          : {}),
       }),
     });
     if (res.ok) {
@@ -561,13 +572,39 @@ export default function Home() {
       setParsedRule(null);
       setRuleText("");
       setRecipientAddr("");
+      setRecipientPhone("");
+      setResolvedAddr("");
+      setResolveStatus("");
       void loadActivity();
       void loadRules();
     } else {
       const e = (await res.json()) as { error?: string };
       setRuleStatus(e.error ?? "Could not save the rule.");
     }
-  }, [onboard, parsedRule, recipientAddr, loadActivity, loadRules]);
+  }, [onboard, parsedRule, recipientAddr, recipientPhone, resolvedAddr, loadActivity, loadRules]);
+
+  // Look a recipient up by phone number (Celo SocialConnect via MiniPay's
+  // attestations) and fill the address on success.
+  const resolveRecipient = useCallback(async () => {
+    if (recipientPhone.trim().length < 8) {
+      setResolveStatus("Enter the number in international format, e.g. +2348012345678.");
+      return;
+    }
+    setResolveStatus("Looking up on MiniPay...");
+    const res = await fetch("/api/resolve-recipient", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: recipientPhone.trim() }),
+    });
+    const json = (await res.json()) as { address?: string; error?: string };
+    if (res.ok && json.address) {
+      setRecipientAddr(json.address);
+      setResolvedAddr(json.address);
+      setResolveStatus(`Found: ${json.address.slice(0, 6)}...${json.address.slice(-4)} on MiniPay.`);
+    } else {
+      setResolveStatus(json.error ?? "Could not look that number up.");
+    }
+  }, [recipientPhone]);
 
   // Pause/resume or delete a saved rule.
   const pauseResume = useCallback(
@@ -946,13 +983,29 @@ export default function Home() {
                 </div>
               </div>
               {parsedRule.needsRecipientResolution && (
-                <input
-                  value={recipientAddr}
-                  onChange={(e) => setRecipientAddr(e.target.value)}
-                  placeholder="Recipient address 0x..."
-                  style={{ ...input, width: "100%", marginTop: 12 }}
-                  aria-label="Recipient address"
-                />
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <input
+                      value={recipientPhone}
+                      onChange={(e) => setRecipientPhone(e.target.value)}
+                      inputMode="tel"
+                      placeholder="Recipient phone +234..."
+                      style={{ ...input, flex: "1 1 150px" }}
+                      aria-label="Recipient phone number"
+                    />
+                    <button onClick={resolveRecipient} style={buttonGhost}>
+                      Find on MiniPay
+                    </button>
+                  </div>
+                  {resolveStatus && <p style={statusText}>{resolveStatus}</p>}
+                  <input
+                    value={recipientAddr}
+                    onChange={(e) => setRecipientAddr(e.target.value)}
+                    placeholder="or paste a wallet address 0x..."
+                    style={{ ...input, width: "100%", marginTop: 8 }}
+                    aria-label="Recipient address"
+                  />
+                </div>
               )}
               <button onClick={confirmRule} style={{ ...button, marginTop: 12, width: "100%" }}>
                 Looks right, activate

@@ -17,6 +17,9 @@ const CreateBody = z.object({
   params: z.record(z.unknown()),
   cadence: CadenceSchema,
   nextRun: z.string().default("now"),
+  // Human-readable label for the allowlisted recipient (e.g. the phone number
+  // the address was resolved from). Display-only.
+  recipientLabel: z.string().max(40).optional(),
 });
 
 export async function POST(request: Request) {
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
   // step that authorizes the destination.
   if (parsed.data.kind === "remittance" || parsed.data.kind === "bill_drip") {
     const to = typeof params.to === "string" ? params.to : undefined;
-    if (to) await allowlistRecipient(userId, to);
+    if (to) await allowlistRecipient(userId, to, parsed.data.recipientLabel);
   }
 
   return NextResponse.json({ scheduleId: row?.id, nextRun: nextRun.toISOString() });
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
 // Add an address to the user's recipient allowlist, idempotently. The unique
 // index on (user_id, lower(address)) makes a repeat a no-op; a concurrent create
 // that wins the race just means the address is already allowlisted (benign).
-async function allowlistRecipient(userId: string, address: string): Promise<void> {
+async function allowlistRecipient(userId: string, address: string, label?: string): Promise<void> {
   const existing = await db
     .select({ id: recipients.id })
     .from(recipients)
@@ -81,7 +84,7 @@ async function allowlistRecipient(userId: string, address: string): Promise<void
     .limit(1);
   if (existing.length > 0) return;
   try {
-    await db.insert(recipients).values({ userId, address });
+    await db.insert(recipients).values({ userId, address, label: label ?? null });
   } catch {
     // Unique-index race: another request allowlisted the same address first.
   }
