@@ -25,6 +25,7 @@ import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
+import { emitReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -238,19 +239,23 @@ interface ExecutionRow {
 }
 
 async function recordExecution(row: ExecutionRow): Promise<void> {
-  await db.insert(executions).values({
-    userId: row.userId,
-    scheduleId: row.scheduleId ?? null,
-    cycleId: row.cycleId ?? null,
-    kind: row.kind,
-    status: row.status,
-    txHash: row.txHash ?? null,
-    amountIn: row.amountIn,
-    usdValue: row.usdValue != null ? row.usdValue.toString() : null,
-    tokenIn: row.tokenIn,
-    feeCurrency: row.feeCurrency,
-    error: row.error ?? null,
-  });
+  const [inserted] = await db
+    .insert(executions)
+    .values({
+      userId: row.userId,
+      scheduleId: row.scheduleId ?? null,
+      cycleId: row.cycleId ?? null,
+      kind: row.kind,
+      status: row.status,
+      txHash: row.txHash ?? null,
+      amountIn: row.amountIn,
+      usdValue: row.usdValue != null ? row.usdValue.toString() : null,
+      tokenIn: row.tokenIn,
+      feeCurrency: row.feeCurrency,
+      error: row.error ?? null,
+    })
+    .returning();
+  await emitReceipt(inserted);
 }
 
 // CLI: parse --flag value pairs.

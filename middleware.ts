@@ -15,6 +15,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/api\/fx-route(\/|$)/,
   /^\/api\/healthz(\/|$)/,
   /^\/api\/readyz(\/|$)/,
+  // Authenticated by Telegram's secret token header inside the handler, not by
+  // a user session (Telegram's servers are the caller).
+  /^\/api\/telegram\/webhook(\/|$)/,
   /^\/mcp(\/|$)/,
 ];
 

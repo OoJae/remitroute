@@ -132,6 +132,13 @@ const schema = z.object({
     .regex(/^[a-z0-9_]{1,32}$/, "ATTRIBUTION_TAG must be 1-32 chars of [a-z0-9_]")
     .optional(),
 
+  // Per-action user receipts over Telegram. All three unset = feature dormant
+  // (no receipts sent, link card hidden, webhook 503s). The bot token and the
+  // webhook secret are secrets; the username is public (deep-link target).
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+
   // --- Security + ops (added in the hardening pass) ---
   // HMAC secret for signed session cookies. MUST be distinct from ENCRYPTION_KEY
   // (never reuse the wallet-encryption key for sessions). 32+ random bytes hex.

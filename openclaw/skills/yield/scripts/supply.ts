@@ -19,6 +19,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
+import { emitReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -240,19 +241,23 @@ interface YieldRow {
 }
 
 async function recordRow(row: YieldRow): Promise<void> {
-  await db.insert(executions).values({
-    userId: row.userId,
-    scheduleId: row.scheduleId ?? null,
-    cycleId: row.cycleId ?? null,
-    kind: row.kind,
-    status: row.status,
-    txHash: row.txHash ?? null,
-    amountIn: row.amountIn,
-    usdValue: row.usdValue != null ? row.usdValue.toString() : null,
-    tokenIn: row.tokenIn,
-    feeCurrency: config.FEE_CURRENCY,
-    error: row.error ?? null,
-  });
+  const [inserted] = await db
+    .insert(executions)
+    .values({
+      userId: row.userId,
+      scheduleId: row.scheduleId ?? null,
+      cycleId: row.cycleId ?? null,
+      kind: row.kind,
+      status: row.status,
+      txHash: row.txHash ?? null,
+      amountIn: row.amountIn,
+      usdValue: row.usdValue != null ? row.usdValue.toString() : null,
+      tokenIn: row.tokenIn,
+      feeCurrency: config.FEE_CURRENCY,
+      error: row.error ?? null,
+    })
+    .returning();
+  await emitReceipt(inserted);
 }
 
 function parseCliArgs(argv: string[]): SupplyArgs {

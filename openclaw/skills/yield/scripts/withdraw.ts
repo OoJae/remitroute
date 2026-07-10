@@ -18,6 +18,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi, MAX_UINT256 } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
+import { emitReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -164,18 +165,22 @@ interface WithdrawRow {
 }
 
 async function recordRow(row: WithdrawRow): Promise<void> {
-  await db.insert(executions).values({
-    userId: row.userId,
-    scheduleId: row.scheduleId ?? null,
-    cycleId: row.cycleId ?? null,
-    kind: "yield_withdraw",
-    status: row.status,
-    txHash: row.txHash ?? null,
-    amountIn: row.amountIn,
-    tokenIn: row.tokenIn,
-    feeCurrency: config.FEE_CURRENCY,
-    error: row.error ?? null,
-  });
+  const [inserted] = await db
+    .insert(executions)
+    .values({
+      userId: row.userId,
+      scheduleId: row.scheduleId ?? null,
+      cycleId: row.cycleId ?? null,
+      kind: "yield_withdraw",
+      status: row.status,
+      txHash: row.txHash ?? null,
+      amountIn: row.amountIn,
+      tokenIn: row.tokenIn,
+      feeCurrency: config.FEE_CURRENCY,
+      error: row.error ?? null,
+    })
+    .returning();
+  await emitReceipt(inserted);
 }
 
 function parseCliArgs(argv: string[]): WithdrawArgs {

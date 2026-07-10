@@ -67,6 +67,7 @@ export async function POST(request: Request) {
     executionWallet: user.walletAddress,
     city: user.city,
     displayName: user.displayName,
+    telegramLinked: Boolean(user.telegramId),
   });
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,

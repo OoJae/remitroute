@@ -18,6 +18,7 @@ import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js"
 import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
+import { emitReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 // Tokens a user can withdraw. Gas is always paid in cUSD via fee abstraction.
@@ -166,17 +167,21 @@ interface ExecutionRow {
 }
 
 async function recordExecution(row: ExecutionRow): Promise<void> {
-  await db.insert(executions).values({
-    userId: row.userId,
-    scheduleId: null,
-    kind: "user_withdraw",
-    status: row.status,
-    txHash: row.txHash ?? null,
-    amountIn: row.amountIn,
-    tokenIn: row.tokenIn,
-    feeCurrency: config.FEE_CURRENCY,
-    error: row.error ?? null,
-  });
+  const [inserted] = await db
+    .insert(executions)
+    .values({
+      userId: row.userId,
+      scheduleId: null,
+      kind: "user_withdraw",
+      status: row.status,
+      txHash: row.txHash ?? null,
+      amountIn: row.amountIn,
+      tokenIn: row.tokenIn,
+      feeCurrency: config.FEE_CURRENCY,
+      error: row.error ?? null,
+    })
+    .returning();
+  await emitReceipt(inserted);
 }
 
 // CLI: parse --flag value pairs.

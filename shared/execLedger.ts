@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db/client.js";
 import { executions } from "./db/schema.js";
 import { config } from "./config.js";
+import { emitReceipt } from "./receipts.js";
 
 export interface ReserveParams {
   userId: string;
@@ -56,5 +57,7 @@ export async function finalizeExecution(id: string, u: FinalizeParams): Promise<
   const set: Record<string, unknown> = { status: u.status, error: u.error ?? null };
   if (u.txHash !== undefined) set.txHash = u.txHash;
   if (u.amountOut !== undefined) set.amountOut = u.amountOut;
-  await db.update(executions).set(set).where(eq(executions.id, id));
+  const [row] = await db.update(executions).set(set).where(eq(executions.id, id)).returning();
+  // The user's receipt for this action (never throws, no-op when unlinked).
+  await emitReceipt(row);
 }

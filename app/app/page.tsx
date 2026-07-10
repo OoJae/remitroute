@@ -43,6 +43,7 @@ interface OnboardResult {
   executionWallet: string;
   city: string | null;
   displayName: string | null;
+  telegramLinked?: boolean;
 }
 
 interface ExecutionItem {
@@ -132,6 +133,8 @@ export default function Home() {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [yieldPositions, setYieldPositions] = useState<YieldPosition[]>([]);
   const [totalUsd, setTotalUsd] = useState<number | null>(null);
+  const [tgLinked, setTgLinked] = useState(false);
+  const [tgStatus, setTgStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -208,6 +211,8 @@ export default function Home() {
     setBalances([]);
     setYieldPositions([]);
     setTotalUsd(null);
+    setTgLinked(false);
+    setTgStatus("");
     setCity("");
     setCountry("");
     setProfileSaved(false);
@@ -396,6 +401,34 @@ export default function Home() {
       setProfileStatus("Could not save your location.");
     }
   }, [onboard, city, country]);
+
+  // Open the Telegram deep link that binds this account to the user's chat.
+  // The bot confirms inside Telegram; we poll the link endpoint briefly so the
+  // card can flip to Connected without a re-login.
+  const connectTelegram = useCallback(async () => {
+    setTgStatus("Preparing your link...");
+    try {
+      const res = await fetch("/api/telegram/link", { method: "POST" });
+      const json = (await res.json()) as { deepLink?: string; linked?: boolean; error?: string };
+      if (!res.ok || !json.deepLink) {
+        setTgStatus(json.error ?? "Telegram receipts are not available right now.");
+        return;
+      }
+      window.open(json.deepLink, "_blank", "noopener");
+      setTgStatus("Tap Start in Telegram to finish connecting.");
+      for (const delayMs of [8000, 15000, 30000]) {
+        await new Promise((r) => setTimeout(r, delayMs));
+        const check = await fetch("/api/telegram/link", { method: "POST" });
+        if (check.ok && ((await check.json()) as { linked?: boolean }).linked) {
+          setTgLinked(true);
+          setTgStatus("");
+          return;
+        }
+      }
+    } catch {
+      setTgStatus("Could not reach the server. Try again.");
+    }
+  }, []);
 
   // Preview a plain-language rule. Shows the parsed rule for confirmation; does
   // not save until the user confirms.
@@ -730,6 +763,21 @@ export default function Home() {
             </button>
             {withdrawStatus && <p style={statusText}>{withdrawStatus}</p>}
           </div>
+        </section>
+      )}
+
+      {onboard && !onboard.telegramLinked && !tgLinked && (
+        <section style={card}>
+          <h2 style={h2}>Receipts on Telegram</h2>
+          <p style={{ color: MUTED, marginTop: 0 }}>
+            Your agent acts while this app is closed. Connect Telegram and it
+            sends you a receipt every time it moves money: what moved, the
+            transaction link, and the proof hash.
+          </p>
+          <button onClick={connectTelegram} style={button}>
+            Connect Telegram
+          </button>
+          {tgStatus && <p style={statusText}>{tgStatus}</p>}
         </section>
       )}
 
