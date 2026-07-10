@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toHex } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
 
@@ -178,45 +179,55 @@ export default function Home() {
   // no gas), and exchange it for an HttpOnly session cookie. The same call
   // creates the user + execution wallet on first sign-in. After this the cookie
   // authenticates every request, so no userId is ever sent by the client.
-  useEffect(() => {
-    if (!isConnected || !address || onboard || typeof window === "undefined" || !window.ethereum) {
-      return;
-    }
+  // The in-flight ref stops the effect double-firing from opening two
+  // concurrent sign prompts (MiniPay rejects both); the message is sent to
+  // personal_sign hex-encoded, the canonical EIP-191 param form (same signed
+  // bytes, so server verification is unchanged).
+  const signingRef = useRef(false);
+  const signIn = useCallback(async () => {
+    if (typeof window === "undefined" || !window.ethereum || !address) return;
+    if (signingRef.current) return;
+    signingRef.current = true;
     const eth = window.ethereum;
-    void (async () => {
-      try {
-        setStatus("Signing you in...");
-        const nonceRes = await fetch("/api/auth/nonce", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ minipayAddress: address }),
-        });
-        if (!nonceRes.ok) {
-          setStatus("Could not start sign-in. Please try again.");
-          return;
-        }
-        const { nonce, message } = (await nonceRes.json()) as { nonce: string; message: string };
-        const signature = (await eth.request({
-          method: "personal_sign",
-          params: [message, address],
-        })) as string;
-        const verifyRes = await fetch("/api/auth/verify", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ minipayAddress: address, nonce, signature }),
-        });
-        if (verifyRes.ok) {
-          setOnboard((await verifyRes.json()) as OnboardResult);
-          setStatus("");
-        } else {
-          setStatus("Sign-in failed. Please try again.");
-        }
-      } catch (err) {
-        const m = ((err as Error)?.message ?? "").toLowerCase();
-        setStatus(m.includes("denied") || m.includes("rejected") ? "Sign-in cancelled." : "Could not sign in.");
+    try {
+      setStatus("Signing you in...");
+      const nonceRes = await fetch("/api/auth/nonce", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ minipayAddress: address }),
+      });
+      if (!nonceRes.ok) {
+        setStatus("Could not start sign-in. Please try again.");
+        return;
       }
-    })();
-  }, [isConnected, address, onboard]);
+      const { nonce, message } = (await nonceRes.json()) as { nonce: string; message: string };
+      const signature = (await eth.request({
+        method: "personal_sign",
+        params: [toHex(message), address],
+      })) as string;
+      const verifyRes = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ minipayAddress: address, nonce, signature }),
+      });
+      if (verifyRes.ok) {
+        setOnboard((await verifyRes.json()) as OnboardResult);
+        setStatus("");
+      } else {
+        setStatus("Sign-in failed. Please try again.");
+      }
+    } catch (err) {
+      const m = ((err as Error)?.message ?? "").toLowerCase();
+      setStatus(m.includes("denied") || m.includes("rejected") ? "Sign-in cancelled." : "Could not sign in.");
+    } finally {
+      signingRef.current = false;
+    }
+  }, [address]);
+
+  useEffect(() => {
+    if (!isConnected || !address || onboard) return;
+    void signIn();
+  }, [isConnected, address, onboard, signIn]);
 
   // When the connected MiniPay wallet changes (the user switches accounts),
   // drop all per-user state so nothing from the previous account leaks into the
@@ -742,6 +753,16 @@ export default function Home() {
         <section style={card}>
           <div style={label}>YOUR MINIPAY WALLET</div>
           <code style={mono}>{address}</code>
+          {!onboard && (
+            <div style={{ marginTop: 12 }}>
+              {status ? <p style={{ ...statusText, marginTop: 0 }}>{status}</p> : null}
+              {status && !status.includes("Signing") && (
+                <button onClick={() => void signIn()} style={{ ...buttonGhost, marginTop: 8 }}>
+                  Try sign-in again
+                </button>
+              )}
+            </div>
+          )}
         </section>
       )}
 
