@@ -187,9 +187,15 @@ async function main(): Promise<void> {
     }
 
     // Pace to the interval, accounting for the time the payment itself took.
+    // Sleep in short slices so SIGTERM stops the loop within seconds instead of
+    // stalling a full interval and forcing systemd to SIGKILL on stop.
     const elapsed = Date.now() - started;
-    const waitMs = Math.max(0, INTERVAL_SEC * 1000 - elapsed);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    let remainingMs = Math.max(0, INTERVAL_SEC * 1000 - elapsed);
+    while (running && remainingMs > 0) {
+      const slice = Math.min(remainingMs, 5000);
+      await new Promise((resolve) => setTimeout(resolve, slice));
+      remainingMs -= slice;
+    }
   }
   log.info({ ...stats }, "x402 traffic engine stopped");
 }
