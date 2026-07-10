@@ -32,9 +32,15 @@ const END_AT = new Date(process.env.X402_TRAFFIC_END ?? "2026-07-20T09:00:00Z");
 
 // Payer top-up guardrails: refill USDC owner -> payer when the payer cannot
 // cover ~10 more calls; each refill is small and the daily total is hard-capped
-// so a bug can never drain the owner's USDC.
+// so a bug can never drain the owner's USDC. The refills are circular (payments
+// send the same USDC payer -> owner), so the ceiling must cover a full day at
+// the configured rate: ~0.01 USDC per payment = 864/day at a 100s interval.
+// Env-tunable; the default self-sizes to the interval with 2x headroom.
 const TOPUP_UNITS_PER = parseUnits("1", TOKENS.USDC.decimals); // 1 USDC per refill
-const TOPUP_MAX_PER_DAY = 5; // absolute ceiling: 5 USDC/day
+const TOPUP_MAX_PER_DAY = Math.max(
+  5,
+  Number(process.env.X402_TOPUP_MAX_PER_DAY ?? Math.ceil(((86400 / INTERVAL_SEC) * 0.01) * 2)),
+);
 const PAYER_FLOOR_UNITS = parseUnits("0.1", TOKENS.USDC.decimals);
 
 // Back off and let systemd restart us if the endpoint is persistently failing.
