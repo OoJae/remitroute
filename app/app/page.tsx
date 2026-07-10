@@ -70,6 +70,15 @@ interface TokenBalance {
   address: string;
   decimals: number;
   amount: string;
+  usd?: number;
+}
+
+interface YieldPosition {
+  symbol: string;
+  supplied: string;
+  apyPct: number;
+  earned: number;
+  usd: number;
 }
 
 interface ScheduleItem {
@@ -121,6 +130,8 @@ export default function Home() {
 
   // Phase 9 state.
   const [balances, setBalances] = useState<TokenBalance[]>([]);
+  const [yieldPositions, setYieldPositions] = useState<YieldPosition[]>([]);
+  const [totalUsd, setTotalUsd] = useState<number | null>(null);
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -195,6 +206,8 @@ export default function Home() {
     setActivity([]);
     setRules([]);
     setBalances([]);
+    setYieldPositions([]);
+    setTotalUsd(null);
     setCity("");
     setCountry("");
     setProfileSaved(false);
@@ -218,7 +231,16 @@ export default function Home() {
 
   const loadBalances = useCallback(async (signal?: AbortSignal) => {
     const res = await fetch("/api/balance", { signal });
-    if (res.ok) setBalances(((await res.json()) as { balances: TokenBalance[] }).balances);
+    if (res.ok) {
+      const json = (await res.json()) as {
+        balances: TokenBalance[];
+        yield?: YieldPosition[];
+        totalUsd?: number;
+      };
+      setBalances(json.balances);
+      setYieldPositions(json.yield ?? []);
+      setTotalUsd(typeof json.totalUsd === "number" ? json.totalUsd : null);
+    }
   }, []);
 
   const loadRules = useCallback(async (signal?: AbortSignal) => {
@@ -614,9 +636,50 @@ export default function Home() {
               {balances.map((b) => (
                 <div key={b.symbol} style={row}>
                   <span style={{ color: FAINT }}>{b.symbol}</span>
-                  <span style={{ color: CREAM }}>{trimAmount(b.amount)}</span>
+                  <span style={{ color: CREAM }}>
+                    {trimAmount(b.amount)}
+                    {typeof b.usd === "number" && b.usd > 0 && (
+                      <span style={{ color: FAINT, marginLeft: 8, fontSize: 12 }}>
+                        ${b.usd.toFixed(2)}
+                      </span>
+                    )}
+                  </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {yieldPositions.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: BORDER_LINE, paddingTop: 12 }}>
+              <div style={{ ...label, marginBottom: 8 }}>GROWING &middot; AAVE SAVINGS</div>
+              {yieldPositions.map((p) => (
+                <div key={p.symbol}>
+                  <div style={row}>
+                    <span style={{ color: FAINT }}>{p.symbol}</span>
+                    <span style={{ color: CREAM }}>
+                      {trimAmount(p.supplied)}
+                      <span style={{ color: GREEN, marginLeft: 8, fontSize: 12 }}>
+                        {p.apyPct.toFixed(2)}% APY
+                      </span>
+                    </span>
+                  </div>
+                  {p.earned > 0.000001 && (
+                    <div style={{ ...row, borderBottom: "none", paddingTop: 0 }}>
+                      <span style={{ color: FAINT, fontSize: 12 }}>earned so far</span>
+                      <span style={{ color: GREEN, fontSize: 12 }}>
+                        +{trimAmount(p.earned.toFixed(6))} {p.symbol}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {totalUsd !== null && totalUsd > 0 && (
+            <div style={{ ...row, marginTop: 8, borderBottom: "none" }}>
+              <span style={{ ...label, marginBottom: 0 }}>TOTAL</span>
+              <span style={{ color: GOLD, fontFamily: MONO }}>${totalUsd.toFixed(2)}</span>
             </div>
           )}
 
