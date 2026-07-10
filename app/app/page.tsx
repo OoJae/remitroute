@@ -91,6 +91,16 @@ interface ScheduleItem {
   status: string;
 }
 
+interface GoalItem {
+  id: string;
+  name: string;
+  asset: string;
+  targetUsd: number;
+  progressUsd: number;
+  lockUntil: string | null;
+  status: string;
+}
+
 // Poll the injected provider for a receipt so the UI only shows success once the
 // transaction is actually confirmed (status 0x1), never optimistically on the
 // hash. Returns null if it does not confirm within the window.
@@ -135,6 +145,11 @@ export default function Home() {
   const [totalUsd, setTotalUsd] = useState<number | null>(null);
   const [tgLinked, setTgLinked] = useState(false);
   const [tgStatus, setTgStatus] = useState("");
+  const [goalsList, setGoalsList] = useState<GoalItem[]>([]);
+  const [goalName, setGoalName] = useState("");
+  const [goalTarget, setGoalTarget] = useState("");
+  const [goalLockDays, setGoalLockDays] = useState("");
+  const [goalStatus, setGoalStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -213,6 +228,11 @@ export default function Home() {
     setTotalUsd(null);
     setTgLinked(false);
     setTgStatus("");
+    setGoalsList([]);
+    setGoalName("");
+    setGoalTarget("");
+    setGoalLockDays("");
+    setGoalStatus("");
     setCity("");
     setCountry("");
     setProfileSaved(false);
@@ -253,14 +273,20 @@ export default function Home() {
     if (res.ok) setRules(((await res.json()) as { items: ScheduleItem[] }).items);
   }, []);
 
+  const loadGoals = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/goals", { signal });
+    if (res.ok) setGoalsList(((await res.json()) as { items: GoalItem[] }).items);
+  }, []);
+
   useEffect(() => {
     if (!onboard) return;
     const ctrl = new AbortController();
     void loadActivity(ctrl.signal).catch(() => {});
     void loadBalances(ctrl.signal).catch(() => {});
     void loadRules(ctrl.signal).catch(() => {});
+    void loadGoals(ctrl.signal).catch(() => {});
     return () => ctrl.abort();
-  }, [onboard, loadActivity, loadBalances, loadRules]);
+  }, [onboard, loadActivity, loadBalances, loadRules, loadGoals]);
 
   // Tick once a second so the Next Execution countdown stays live.
   useEffect(() => {
@@ -429,6 +455,63 @@ export default function Home() {
       setTgStatus("Could not reach the server. Try again.");
     }
   }, []);
+
+  const createGoal = useCallback(async () => {
+    if (goalName.trim().length < 2 || !(Number(goalTarget) > 0)) {
+      setGoalStatus("Give the goal a name and a target amount.");
+      return;
+    }
+    setGoalStatus("Starting your goal...");
+    const res = await fetch("/api/goals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: goalName,
+        targetUsd: Number(goalTarget),
+        ...(goalLockDays ? { lockDays: Number(goalLockDays) } : {}),
+      }),
+    });
+    if (res.ok) {
+      setGoalName("");
+      setGoalTarget("");
+      setGoalLockDays("");
+      setGoalStatus("");
+      void loadGoals();
+      void loadRules();
+    } else {
+      const e = (await res.json()) as { error?: string };
+      setGoalStatus(e.error ?? "Could not start the goal.");
+    }
+  }, [goalName, goalTarget, goalLockDays, loadGoals, loadRules]);
+
+  const cancelGoal = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Cancel this goal? Saved funds stay in Aave until you withdraw them.")) return;
+      const res = await fetch(`/api/goals/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (res.ok) {
+        void loadGoals();
+        void loadRules();
+      }
+    },
+    [loadGoals, loadRules],
+  );
+
+  const unlockGoal = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Unlock early? The whole point of the lock was to protect this goal from moments like this.")) return;
+      const res = await fetch(`/api/goals/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "unlock", confirm: true }),
+      });
+      if (res.ok) void loadGoals();
+    },
+    [loadGoals],
+  );
 
   // Preview a plain-language rule. Shows the parsed rule for confirmation; does
   // not save until the user confirms.
@@ -877,6 +960,104 @@ export default function Home() {
             </div>
           )}
           {ruleStatus && <p style={statusText}>{ruleStatus}</p>}
+        </section>
+      )}
+
+      {onboard && (
+        <section style={card}>
+          <h2 style={h2}>Savings goals</h2>
+          <p style={{ color: MUTED, marginTop: 0 }}>
+            Name a goal and the agent saves toward it automatically. Lock it and
+            not even a scheduled withdrawal can touch it until the date.
+          </p>
+          {goalsList.map((g) => {
+            const pctDone = Math.min(100, (g.progressUsd / g.targetUsd) * 100);
+            const locked = g.lockUntil && new Date(g.lockUntil).getTime() > now;
+            return (
+              <div key={g.id} style={{ borderTop: BORDER_LINE, padding: "12px 0", fontSize: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 700 }}>{g.name}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 12, color: pctDone >= 100 ? GREEN : CREAM }}>
+                    ${g.progressUsd.toFixed(2)} / ${g.targetUsd.toFixed(0)}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    height: 6,
+                    background: "rgba(242,237,227,0.08)",
+                    borderRadius: 3,
+                    overflow: "hidden",
+                  }}
+                  role="progressbar"
+                  aria-valuenow={Math.round(pctDone)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    style={{
+                      width: `${pctDone}%`,
+                      height: "100%",
+                      background: pctDone >= 100 ? GREEN : GOLD,
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                  <span style={{ color: FAINT, fontSize: 12, fontFamily: MONO }}>
+                    {locked ? `LOCKED UNTIL ${formatLocal(g.lockUntil!)}` : g.asset}
+                  </span>
+                  <span style={{ display: "flex", gap: 8 }}>
+                    {locked && (
+                      <button onClick={() => unlockGoal(g.id)} style={{ ...smallButton, ...ghostSmall }}>
+                        UNLOCK
+                      </button>
+                    )}
+                    <button onClick={() => cancelGoal(g.id)} style={{ ...smallButton, ...ghostSmall }}>
+                      CANCEL
+                    </button>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ borderTop: goalsList.length > 0 ? BORDER_LINE : "none", paddingTop: 12, marginTop: goalsList.length > 0 ? 4 : 0 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <input
+                value={goalName}
+                onChange={(e) => setGoalName(e.target.value)}
+                placeholder="Goal name (e.g. School fees)"
+                style={{ ...input, flex: "1 1 160px" }}
+                aria-label="Goal name"
+              />
+              <input
+                value={goalTarget}
+                onChange={(e) => setGoalTarget(e.target.value)}
+                inputMode="decimal"
+                placeholder="Target $"
+                style={{ ...input, flex: "0 1 90px" }}
+                aria-label="Goal target in USD"
+              />
+              <select
+                value={goalLockDays}
+                onChange={(e) => setGoalLockDays(e.target.value)}
+                style={{ ...input, flex: "0 1 130px" }}
+                aria-label="Lock period"
+              >
+                <option value="">No lock</option>
+                <option value="30">Lock 30 days</option>
+                <option value="90">Lock 90 days</option>
+                <option value="180">Lock 180 days</option>
+              </select>
+            </div>
+            <button onClick={createGoal} style={{ ...button, marginTop: 10, width: "100%" }}>
+              Start this goal
+            </button>
+            <p style={{ color: FAINT, fontSize: 12, marginTop: 8 }}>
+              The agent sweeps 20 percent of your idle {"cUSD"} into Aave savings
+              daily until the target is reached. Cancel anytime.
+            </p>
+            {goalStatus && <p style={statusText}>{goalStatus}</p>}
+          </div>
         </section>
       )}
 

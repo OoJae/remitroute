@@ -98,6 +98,22 @@ export const recipients = pgTable("recipients", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+// Named savings goals. A goal wraps a savings_sweep schedule: contributions
+// accumulate toward target_usd, and while lock_until is in the future the
+// engine refuses Aave withdrawals that would cut into the goal's locked value.
+export const goals = pgTable("goals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  scheduleId: uuid("schedule_id").references(() => schedules.id),
+  name: text("name").notNull(),
+  asset: text("asset").notNull().default("cUSD"),
+  targetUsd: numeric("target_usd").notNull(),
+  targetDate: timestamp("target_date", { withTimezone: true }),
+  lockUntil: timestamp("lock_until", { withTimezone: true }),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 // Applied-migration ledger so migrate.ts runs each file at most once.
 export const schemaMigrations = pgTable("schema_migrations", {
   filename: text("filename").primaryKey(),

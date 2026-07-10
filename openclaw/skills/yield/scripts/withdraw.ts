@@ -16,9 +16,11 @@ import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
-import { resolvePool, assertApprovedAsset, aavePoolAbi, MAX_UINT256 } from "../../../../shared/aave.js";
+import { resolvePool, assertApprovedAsset, aavePoolAbi, aavePositions, MAX_UINT256 } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
 import { emitReceipt } from "../../../../shared/receipts.js";
+import { lockedUsdFor } from "../../../../shared/goals.js";
+import { usdValueOf } from "../../../../shared/usdValue.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -51,6 +53,34 @@ export async function withdraw(rawArgs: WithdrawArgs): Promise<{ status: string;
   const [user] = await db.select().from(users).where(eq(users.id, args.user));
   if (!user) throw new Error(`unknown user ${args.user}`);
   const to = getAddress(user.walletAddress);
+
+  // Goal lock: an Aave withdrawal may never cut into savings an active locked
+  // goal protects. This is the single chokepoint for every Aave withdrawal
+  // (scheduled yield_withdraw AND the pre-remittance top-up), and there is
+  // deliberately no bypass: a locked goal is locked.
+  const lock = await lockedUsdFor(args.user, args.asset);
+  if (lock.lockedUsd > 0) {
+    const [pos] = await aavePositions(to, [args.asset]);
+    const positionUsd = pos ? await usdValueOf(args.asset, pos.supplied) : 0;
+    const requestedUsd = isMax ? positionUsd : await usdValueOf(args.asset, args.amount);
+    if (requestedUsd > positionUsd - lock.lockedUsd + 1e-9) {
+      const until = lock.earliestUnlock?.toISOString().slice(0, 10) ?? "the goal completes";
+      log.warn(
+        { user: args.user, asset: args.asset, lockedUsd: lock.lockedUsd, positionUsd, requestedUsd },
+        "withdraw skipped: goal lock",
+      );
+      await recordRow({
+        userId: args.user,
+        scheduleId: args.scheduleId,
+        cycleId: args.cycleId,
+        status: "skipped_locked",
+        amountIn: isMax ? null : args.amount,
+        tokenIn: args.asset,
+        error: `savings locked until ${until} by an active goal`,
+      });
+      return { status: "skipped_locked" };
+    }
+  }
 
   const poolAddress = await resolvePool();
 
