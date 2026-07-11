@@ -139,6 +139,11 @@ const schema = z.object({
   TELEGRAM_BOT_USERNAME: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
 
+  // Hard daily ceiling on ODIS phone-lookup quota top-ups (each ~0.05 cUSD, buys
+  // ~50 lookups). Counted across all serverless isolates via the treasury
+  // ledger, so a sybil cannot bleed the agent wallet past this per day.
+  ODIS_TOPUP_MAX_PER_DAY: numeric(20),
+
   // --- Security + ops (added in the hardening pass) ---
   // HMAC secret for signed session cookies. MUST be distinct from ENCRYPTION_KEY
   // (never reuse the wallet-encryption key for sessions). 32+ random bytes hex.

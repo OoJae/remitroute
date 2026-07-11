@@ -4,6 +4,7 @@
 // setWebhook time), which middleware lets through as a public path; without a
 // configured secret the route refuses to exist. Always answers 200 so Telegram
 // does not retry garbage forever.
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "../../../../shared/db/client.js";
@@ -27,7 +28,11 @@ export async function POST(request: Request) {
   if (!config.TELEGRAM_WEBHOOK_SECRET) {
     return NextResponse.json({ error: "not configured" }, { status: 503 });
   }
-  if (request.headers.get("x-telegram-bot-api-secret-token") !== config.TELEGRAM_WEBHOOK_SECRET) {
+  // Constant-time compare of the secret-token header (this route bypasses the
+  // session middleware, so this header IS its auth).
+  const provided = Buffer.from(request.headers.get("x-telegram-bot-api-secret-token") ?? "", "utf8");
+  const expected = Buffer.from(config.TELEGRAM_WEBHOOK_SECRET, "utf8");
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -47,6 +52,21 @@ export async function POST(request: Request) {
         await sendTelegram(
           chatId,
           "That link has expired. Open the RemitRoute Mini App and tap Connect Telegram again.",
+        );
+        return NextResponse.json({ ok: true });
+      }
+      // Rebind guard: if this account is ALREADY linked to a different chat, a
+      // leaked live code must not silently hijack its receipts. Refuse and tell
+      // the holder to unlink from the current chat first. First-time binds (no
+      // prior chat) proceed - redeem-by-holder is intrinsic to magic links.
+      const [target] = await db
+        .select({ telegramId: users.telegramId })
+        .from(users)
+        .where(eq(users.id, userId));
+      if (target?.telegramId && target.telegramId !== chatId) {
+        await sendTelegram(
+          chatId,
+          "This RemitRoute account already gets receipts on another Telegram. Send /stop from that chat first, then reconnect here.",
         );
         return NextResponse.json({ ok: true });
       }

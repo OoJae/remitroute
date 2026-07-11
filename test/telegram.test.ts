@@ -38,6 +38,7 @@ describe("receiptWorthy", () => {
 });
 
 describe("formatReceipt", () => {
+  const TXHASH = "0x" + "ab".repeat(32);
   const base = {
     id: "e1",
     userId: USER,
@@ -45,14 +46,19 @@ describe("formatReceipt", () => {
     status: "confirmed",
     amountIn: "0.300000",
     tokenIn: "cUSD",
-    txHash: "0xabc",
+    txHash: TXHASH,
     createdAt: "2026-07-10T00:00:00.000Z",
   };
   it("includes the action, the celoscan link, and a proof hash", () => {
     const msg = formatReceipt(base);
     expect(msg).toContain("Sent 0.3 cUSD");
-    expect(msg).toContain("celoscan.io/tx/0xabc");
+    expect(msg).toContain(`celoscan.io/tx/${TXHASH}`);
     expect(msg).toContain("proof <code>0x");
+  });
+  it("omits the link for a malformed hash instead of dropping the receipt", () => {
+    const msg = formatReceipt({ ...base, txHash: "0xabc" });
+    expect(msg).toContain("Sent 0.3 cUSD");
+    expect(msg).not.toContain("celoscan.io");
   });
   it("explains protective skips in plain language", () => {
     const msg = formatReceipt({ ...base, status: "skipped_cap", txHash: null });

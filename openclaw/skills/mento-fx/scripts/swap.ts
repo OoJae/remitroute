@@ -20,7 +20,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { withAttribution } from "../../../../shared/attribution.js";
-import { emitReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 // Maximum slippage we ever allow, regardless of requested value.
@@ -276,7 +276,7 @@ async function recordSwap(row: SwapRow): Promise<void> {
       error: row.error ?? null,
     })
     .returning();
-  await emitReceipt(inserted);
+  queueReceipt(inserted);
 }
 
 function parseCliArgs(argv: string[]): SwapArgs {

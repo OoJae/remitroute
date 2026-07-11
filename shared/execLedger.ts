@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db/client.js";
 import { executions } from "./db/schema.js";
 import { config } from "./config.js";
-import { emitReceipt } from "./receipts.js";
+import { queueReceipt } from "./receipts.js";
 
 export interface ReserveParams {
   userId: string;
@@ -58,6 +58,7 @@ export async function finalizeExecution(id: string, u: FinalizeParams): Promise<
   if (u.txHash !== undefined) set.txHash = u.txHash;
   if (u.amountOut !== undefined) set.amountOut = u.amountOut;
   const [row] = await db.update(executions).set(set).where(eq(executions.id, id)).returning();
-  // The user's receipt for this action (never throws, no-op when unlinked).
-  await emitReceipt(row);
+  // Queue the user's receipt WITHOUT blocking the money path; the caller
+  // (run-due, or a serverless route) drains it with flushReceipts() before exit.
+  queueReceipt(row);
 }

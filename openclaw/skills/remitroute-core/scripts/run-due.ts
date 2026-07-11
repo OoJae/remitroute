@@ -36,6 +36,7 @@ import {
   evaluateAnomaly,
 } from "../../../../shared/engine.js";
 import { notify, pingDeadman } from "../../../../shared/alerts.js";
+import { flushReceipts } from "../../../../shared/receipts.js";
 import { computeIntentId } from "../../../../shared/intent.js";
 
 const TRANSFER_KINDS = new Set(["remittance", "bill_drip"]);
@@ -450,6 +451,11 @@ export async function runDue(): Promise<CycleSummary> {
   if (!summary.aborted && !breakerTripped) {
     await pingDeadman();
   }
+
+  // Deliver the receipts queued during this cycle. They were dispatched
+  // non-blocking so Telegram latency never serialized into the money loop;
+  // draining here (before the process exits) makes sure none are dropped.
+  await flushReceipts();
   return summary;
 }
 

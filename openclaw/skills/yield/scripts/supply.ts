@@ -19,7 +19,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { emitReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -257,7 +257,7 @@ async function recordRow(row: YieldRow): Promise<void> {
       error: row.error ?? null,
     })
     .returning();
-  await emitReceipt(inserted);
+  queueReceipt(inserted);
 }
 
 function parseCliArgs(argv: string[]): SupplyArgs {

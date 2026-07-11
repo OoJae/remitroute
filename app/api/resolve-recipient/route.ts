@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolvePhone } from "../../../shared/phoneLookup.js";
-import { rateLimit } from "../../../shared/ratelimit.js";
+import { rateLimit, clientIp } from "../../../shared/ratelimit.js";
 import { log } from "../../../shared/log.js";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,14 @@ export async function POST(request: Request) {
   const userId = request.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const rl = await rateLimit(`resolve-recipient:${userId}`, { max: 10, windowSec: 3600 });
-  if (!rl.allowed) return NextResponse.json({ error: "rate limited" }, { status: 429 });
+  // Each lookup can trigger a paid ODIS quota top-up, so this limiter fails
+  // CLOSED: a DB outage must not turn every sybil account into an amplifier.
+  // A second per-IP bucket blunts one signer minting many userIds.
+  const perUser = await rateLimit(`resolve-recipient:${userId}`, { max: 10, windowSec: 3600, failClosed: true });
+  const perIp = await rateLimit(`resolve-recipient-ip:${clientIp(request)}`, { max: 30, windowSec: 3600, failClosed: true });
+  if (!perUser.allowed || !perIp.allowed) {
+    return NextResponse.json({ error: "rate limited" }, { status: 429 });
+  }
 
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

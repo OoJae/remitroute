@@ -98,6 +98,7 @@ interface GoalItem {
   asset: string;
   targetUsd: number;
   progressUsd: number;
+  reached?: boolean;
   lockUntil: string | null;
   status: string;
 }
@@ -571,10 +572,11 @@ export default function Home() {
         params,
         cadence: parsedRule.cadence,
         nextRun: parsedRule.nextRun,
-        // When the address came from a phone lookup, keep the number as the
-        // recipient's label so the allowlist stays human-readable.
+        // When the address came from a phone lookup, keep only the last 4 digits
+        // as a recognizable label. Storing the full number would rebuild the
+        // phone->wallet map that the SocialConnect lookup keeps private.
         ...(resolvedAddr && resolvedAddr === recipientAddr && recipientPhone
-          ? { recipientLabel: recipientPhone }
+          ? { recipientLabel: "phone •••" + recipientPhone.replace(/[^0-9]/g, "").slice(-4) }
           : {}),
       }),
     });
@@ -1050,8 +1052,15 @@ export default function Home() {
             return (
               <div key={g.id} style={{ borderTop: BORDER_LINE, padding: "12px 0", fontSize: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 700 }}>{g.name}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 12, color: pctDone >= 100 ? GREEN : CREAM }}>
+                  <span style={{ fontWeight: 700 }}>
+                    {g.name}
+                    {g.reached && (
+                      <span style={{ color: GREEN, fontFamily: MONO, fontSize: 11, marginLeft: 8 }}>
+                        REACHED
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 12, color: g.reached ? GREEN : CREAM }}>
                     ${g.progressUsd.toFixed(2)} / ${g.targetUsd.toFixed(0)}
                   </span>
                 </div>

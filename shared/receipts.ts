@@ -100,7 +100,10 @@ function headline(row: ReceiptRow): string {
 
 export function formatReceipt(row: ReceiptRow): string {
   const lines = [headline(row)];
-  if (row.txHash) {
+  // Only link a well-formed hash. If a corrupt value ever reached txHash, an
+  // unescaped interpolation would make Telegram reject the whole message (HTTP
+  // 400) and the receipt would be silently dropped; degrade to linkless instead.
+  if (row.txHash && /^0x[0-9a-fA-F]{64}$/.test(row.txHash)) {
     lines.push(`<a href="https://celoscan.io/tx/${row.txHash}">View on Celoscan</a>`);
   }
   const proof = executionProofHash({
@@ -134,8 +137,23 @@ export async function sendTelegram(chatId: string, html: string): Promise<boolea
   return res.ok;
 }
 
-// The hook the ledger layers call on every terminal write. Awaited by callers
-// but guaranteed never to throw.
+// Non-blocking receipt dispatch. The ledger layers call queueReceipt (they do
+// NOT await it) so a slow or partitioned Telegram cannot serialize up to 5s per
+// action into the sequential heartbeat money loop. The in-flight promises are
+// tracked so a long-lived process (run-due) or a serverless route can drain
+// them with flushReceipts() before it exits and drops them.
+const pendingReceipts: Promise<void>[] = [];
+
+export function queueReceipt(row: ReceiptRow | undefined): void {
+  pendingReceipts.push(emitReceipt(row));
+}
+
+export async function flushReceipts(): Promise<void> {
+  const inflight = pendingReceipts.splice(0);
+  if (inflight.length > 0) await Promise.allSettled(inflight);
+}
+
+// The actual delivery. Guaranteed never to throw.
 export async function emitReceipt(row: ReceiptRow | undefined): Promise<void> {
   try {
     if (!row || !config.TELEGRAM_BOT_TOKEN) return;

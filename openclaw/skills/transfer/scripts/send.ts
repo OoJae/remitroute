@@ -25,7 +25,7 @@ import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { emitReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -255,7 +255,7 @@ async function recordExecution(row: ExecutionRow): Promise<void> {
       error: row.error ?? null,
     })
     .returning();
-  await emitReceipt(inserted);
+  queueReceipt(inserted);
 }
 
 // CLI: parse --flag value pairs.

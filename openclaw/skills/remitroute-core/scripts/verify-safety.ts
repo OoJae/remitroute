@@ -12,6 +12,8 @@ import {
   resumeEngine,
   duplicateExecutionCount,
 } from "../../../../shared/engine.js";
+import { lockedUsdFor } from "../../../../shared/goals.js";
+import { lockBreached, goalLockedUsd } from "../../../../shared/goalMath.js";
 import { log } from "../../../../shared/log.js";
 
 const TEST_USER = "00000000-0000-0000-0000-000000000000";
@@ -83,12 +85,34 @@ async function checkAnomalyHaltGuardrail(): Promise<Check> {
   }
 }
 
+async function checkGoalLockGuardrail(): Promise<Check> {
+  // The pure gate math: a locked goal blocks a withdrawal that dips below the
+  // locked floor, and never spuriously blocks when nothing is locked.
+  const gateOk =
+    lockBreached(1.0, 1.0, 0.5) &&
+    lockBreached(0.6, 1.0, 0.5) &&
+    !lockBreached(0.5, 1.0, 0.5) &&
+    !lockBreached(1.0, 1.0, 0) &&
+    goalLockedUsd(12, 10) === 10 &&
+    goalLockedUsd(3, 10) === 3;
+  // The lock query executes against the live schema and returns a sane figure
+  // (catches a column rename / broken query that would silently report 0).
+  const summary = await lockedUsdFor(TEST_USER, "cUSD");
+  const queryOk = Number.isFinite(summary.lockedUsd) && summary.lockedUsd >= 0;
+  return {
+    name: "goal-lock",
+    pass: gateOk && queryOk,
+    detail: `gate math=${gateOk}, lock query ok=${queryOk} (lockedUsd=${summary.lockedUsd} for the probe user)`,
+  };
+}
+
 async function main(): Promise<void> {
   const checks = [
     await checkCapsGuardrail(),
     await checkGasGuardrail(),
     await checkIdempotencyGuardrail(),
     await checkAnomalyHaltGuardrail(),
+    await checkGoalLockGuardrail(),
   ];
 
   for (const c of checks) {

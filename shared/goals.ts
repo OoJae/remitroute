@@ -1,10 +1,19 @@
 // Savings-goal queries shared by the goals API and the engine's lock gate.
-// Progress is replayed from the execution ledger (USD-valued contributions of
-// the goal's own savings_sweep schedule since the goal was created), so the
-// number the user sees and the number the lock enforces are the same.
+// Contributions are replayed from the execution ledger (USD-valued sweeps of the
+// goal's own schedule since it was created). The LOCK enforces on that replayed
+// figure (a market dip must never unlock funds), while the DISPLAYED progress is
+// additionally capped at the live Aave position so the card never shows savings
+// that have since been withdrawn as still saved.
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "./db/client.js";
-import { executions, goals } from "./db/schema.js";
+import { executions, goals, users } from "./db/schema.js";
+import { aavePositions } from "./aave.js";
+import { usdValueOf } from "./usdValue.js";
+import { lockBreached, goalLockedUsd } from "./goalMath.js";
+import { log } from "./log.js";
+import type { Hex } from "./addresses.js";
+
+export { lockBreached, goalLockedUsd };
 
 export interface GoalWithProgress {
   id: string;
@@ -13,6 +22,7 @@ export interface GoalWithProgress {
   asset: string;
   targetUsd: number;
   progressUsd: number;
+  reached: boolean;
   targetDate: Date | null;
   lockUntil: Date | null;
   status: string;
@@ -42,20 +52,41 @@ export async function listGoalsWithProgress(userId: string): Promise<GoalWithPro
   const rows = await db
     .select()
     .from(goals)
-    .where(and(eq(goals.userId, userId), inArray(goals.status, ["active", "completed"])));
+    .where(and(eq(goals.userId, userId), eq(goals.status, "active")));
+
+  // Live USD value of the user's Aave position per asset, to cap the displayed
+  // progress. Best-effort: if the position read fails, fall back to the
+  // uncapped replayed figure rather than showing zero.
+  const positionUsd = new Map<string, number>();
+  try {
+    const [user] = await db.select({ wallet: users.walletAddress }).from(users).where(eq(users.id, userId));
+    if (user) {
+      const positions = await aavePositions(user.wallet as Hex);
+      for (const p of positions) positionUsd.set(p.symbol, await usdValueOf(p.symbol, p.supplied));
+    }
+  } catch (err) {
+    log.warn({ err, userId }, "goal progress: live position read failed; showing replayed figure");
+  }
+
   return Promise.all(
-    rows.map(async (g) => ({
-      id: g.id,
-      scheduleId: g.scheduleId,
-      name: g.name,
-      asset: g.asset,
-      targetUsd: Number(g.targetUsd),
-      progressUsd: await progressFor(g),
-      targetDate: g.targetDate,
-      lockUntil: g.lockUntil,
-      status: g.status,
-      createdAt: g.createdAt,
-    })),
+    rows.map(async (g) => {
+      const replayed = await progressFor(g);
+      const cap = positionUsd.has(g.asset) ? positionUsd.get(g.asset)! : Infinity;
+      const progressUsd = Math.min(replayed, cap);
+      return {
+        id: g.id,
+        scheduleId: g.scheduleId,
+        name: g.name,
+        asset: g.asset,
+        targetUsd: Number(g.targetUsd),
+        progressUsd,
+        reached: replayed >= Number(g.targetUsd),
+        targetDate: g.targetDate,
+        lockUntil: g.lockUntil,
+        status: g.status,
+        createdAt: g.createdAt,
+      };
+    }),
   );
 }
 
@@ -79,7 +110,7 @@ export async function lockedUsdFor(userId: string, asset: string): Promise<LockS
   for (const g of rows) {
     if (!g.lockUntil || g.lockUntil <= now) continue;
     const progress = await progressFor(g);
-    lockedUsd += Math.min(progress, Number(g.targetUsd));
+    lockedUsd += goalLockedUsd(progress, Number(g.targetUsd));
     if (!earliestUnlock || g.lockUntil < earliestUnlock) earliestUnlock = g.lockUntil;
   }
   return { lockedUsd, earliestUnlock };

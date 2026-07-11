@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withdraw } from "../../../openclaw/skills/transfer/scripts/withdraw-to-user.js";
+import { flushReceipts } from "../../../shared/receipts.js";
 import { log } from "../../../shared/log.js";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export async function POST(request: Request) {
 
   try {
     const result = await withdraw({ user: userId, token: parsed.data.token, amount: parsed.data.amount });
+    // Deliver the withdraw receipt before the serverless function freezes.
+    await flushReceipts();
     const status = result.status === "failed" ? 502 : 200;
     return NextResponse.json(result, { status });
   } catch (err) {

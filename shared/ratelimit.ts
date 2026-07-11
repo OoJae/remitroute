@@ -8,7 +8,7 @@ import { log } from "./log.js";
 
 export async function rateLimit(
   key: string,
-  opts?: { max?: number; windowSec?: number },
+  opts?: { max?: number; windowSec?: number; failClosed?: boolean },
 ): Promise<{ allowed: boolean; remaining: number }> {
   const max = opts?.max ?? config.RATE_LIMIT_MAX;
   const windowSec = opts?.windowSec ?? config.RATE_LIMIT_WINDOW_SEC;
@@ -29,8 +29,11 @@ export async function rateLimit(
     const count = Number(rows[0]?.count ?? 0);
     return { allowed: count <= max, remaining: Math.max(0, max - count) };
   } catch (err) {
-    log.warn({ err, key }, "rate limiter errored; failing open");
-    return { allowed: true, remaining: max };
+    // Default fail-open (a DB hiccup must not lock users out). Routes that gate
+    // real spend pass failClosed so an outage cannot become an amplifier.
+    const allowed = !opts?.failClosed;
+    log.warn({ err, key, failClosed: Boolean(opts?.failClosed) }, `rate limiter errored; failing ${allowed ? "open" : "closed"}`);
+    return { allowed, remaining: allowed ? max : 0 };
   }
 }
 

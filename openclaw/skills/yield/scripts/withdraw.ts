@@ -6,7 +6,7 @@
 //   amount "max" withdraws the full supplied balance.
 import { getAddress, parseUnits, type Hex } from "viem";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db, pool as dbPool } from "../../../../shared/db/client.js";
 import { users, executions } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
@@ -18,8 +18,9 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi, aavePositions, MAX_UINT256 } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { emitReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt } from "../../../../shared/receipts.js";
 import { lockedUsdFor } from "../../../../shared/goals.js";
+import { lockBreached } from "../../../../shared/goalMath.js";
 import { usdValueOf } from "../../../../shared/usdValue.js";
 import { log } from "../../../../shared/log.js";
 
@@ -63,21 +64,27 @@ export async function withdraw(rawArgs: WithdrawArgs): Promise<{ status: string;
     const [pos] = await aavePositions(to, [args.asset]);
     const positionUsd = pos ? await usdValueOf(args.asset, pos.supplied) : 0;
     const requestedUsd = isMax ? positionUsd : await usdValueOf(args.asset, args.amount);
-    if (requestedUsd > positionUsd - lock.lockedUsd + 1e-9) {
-      const until = lock.earliestUnlock?.toISOString().slice(0, 10) ?? "the goal completes";
+    if (lockBreached(requestedUsd, positionUsd, lock.lockedUsd)) {
+      const until = lock.earliestUnlock ? `${lock.earliestUnlock.toISOString().slice(0, 10)} UTC` : "the goal unlocks";
+      // Notify only on the FIRST transition into locked for this schedule; a
+      // recurring locked yield_withdraw would otherwise re-notify every slot.
+      const repeat = await lastWasLocked(args.user, args.scheduleId);
       log.warn(
-        { user: args.user, asset: args.asset, lockedUsd: lock.lockedUsd, positionUsd, requestedUsd },
+        { user: args.user, asset: args.asset, lockedUsd: lock.lockedUsd, positionUsd, requestedUsd, repeat },
         "withdraw skipped: goal lock",
       );
-      await recordRow({
-        userId: args.user,
-        scheduleId: args.scheduleId,
-        cycleId: args.cycleId,
-        status: "skipped_locked",
-        amountIn: isMax ? null : args.amount,
-        tokenIn: args.asset,
-        error: `savings locked until ${until} by an active goal`,
-      });
+      await recordRow(
+        {
+          userId: args.user,
+          scheduleId: args.scheduleId,
+          cycleId: args.cycleId,
+          status: "skipped_locked",
+          amountIn: isMax ? null : args.amount,
+          tokenIn: args.asset,
+          error: `savings locked until ${until} by an active goal`,
+        },
+        { suppressReceipt: repeat },
+      );
       return { status: "skipped_locked" };
     }
   }
@@ -194,7 +201,20 @@ interface WithdrawRow {
   error?: string;
 }
 
-async function recordRow(row: WithdrawRow): Promise<void> {
+// True when the most recent execution for this schedule was already a locked
+// skip, so a still-locked recurring withdraw does not re-notify every slot.
+async function lastWasLocked(userId: string, scheduleId?: string): Promise<boolean> {
+  if (!scheduleId) return false;
+  const [last] = await db
+    .select({ status: executions.status })
+    .from(executions)
+    .where(and(eq(executions.userId, userId), eq(executions.scheduleId, scheduleId)))
+    .orderBy(desc(executions.createdAt))
+    .limit(1);
+  return last?.status === "skipped_locked";
+}
+
+async function recordRow(row: WithdrawRow, opts?: { suppressReceipt?: boolean }): Promise<void> {
   const [inserted] = await db
     .insert(executions)
     .values({
@@ -210,7 +230,7 @@ async function recordRow(row: WithdrawRow): Promise<void> {
       error: row.error ?? null,
     })
     .returning();
-  await emitReceipt(inserted);
+  if (!opts?.suppressReceipt) queueReceipt(inserted);
 }
 
 function parseCliArgs(argv: string[]): WithdrawArgs {
