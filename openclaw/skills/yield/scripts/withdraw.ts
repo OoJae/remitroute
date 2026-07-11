@@ -18,7 +18,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi, aavePositions, MAX_UINT256 } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { queueReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { lockedUsdFor } from "../../../../shared/goals.js";
 import { lockBreached } from "../../../../shared/goalMath.js";
 import { usdValueOf } from "../../../../shared/usdValue.js";
@@ -253,6 +253,7 @@ const invokedDirectly = process.argv[1]?.endsWith("withdraw.ts");
 if (invokedDirectly) {
   withdraw(parseCliArgs(process.argv.slice(2)))
     .then(async (r) => {
+      await flushReceipts();
       await dbPool.end();
       process.exit(r.status === "failed" ? 1 : 0);
     })

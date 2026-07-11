@@ -19,7 +19,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { resolvePool, assertApprovedAsset, aavePoolAbi } from "../../../../shared/aave.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { queueReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 const ArgSchema = z.object({
@@ -280,6 +280,7 @@ const invokedDirectly = process.argv[1]?.endsWith("supply.ts");
 if (invokedDirectly) {
   supply(parseCliArgs(process.argv.slice(2)))
     .then(async (r) => {
+      await flushReceipts();
       await dbPool.end();
       process.exit(r.status === "failed" ? 1 : 0);
     })

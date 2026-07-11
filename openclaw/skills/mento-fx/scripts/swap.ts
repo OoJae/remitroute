@@ -20,7 +20,7 @@ import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { withAttribution } from "../../../../shared/attribution.js";
-import { queueReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 // Maximum slippage we ever allow, regardless of requested value.
@@ -299,6 +299,7 @@ const invokedDirectly = process.argv[1]?.endsWith("swap.ts");
 if (invokedDirectly) {
   swap(parseCliArgs(process.argv.slice(2)))
     .then(async (r) => {
+      await flushReceipts();
       await pool.end();
       process.exit(r.status === "failed" ? 1 : 0);
     })

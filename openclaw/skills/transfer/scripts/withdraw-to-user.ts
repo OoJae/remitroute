@@ -18,7 +18,7 @@ import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js"
 import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
-import { queueReceipt } from "../../../../shared/receipts.js";
+import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 // Tokens a user can withdraw. Gas is always paid in cUSD via fee abstraction.
@@ -205,6 +205,7 @@ const invokedDirectly = process.argv[1]?.endsWith("withdraw-to-user.ts");
 if (invokedDirectly) {
   withdraw(parseCliArgs(process.argv.slice(2)))
     .then(async (r) => {
+      await flushReceipts();
       await pool.end();
       process.exit(r.status === "failed" ? 1 : 0);
     })
