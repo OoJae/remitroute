@@ -144,6 +144,14 @@ const schema = z.object({
   // ledger, so a sybil cannot bleed the agent wallet past this per day.
   ODIS_TOPUP_MAX_PER_DAY: numeric(20),
 
+  // Tagged-volume engine (cUSD<->USDT Mento loop on the owner wallet). Off by
+  // default; the loop reads these from the environment directly.
+  VOLUME_ENABLED: z.string().optional(),
+  VOLUME_INTERVAL_SEC: z.string().optional(),
+  VOLUME_SWAP_FRACTION: z.string().optional(),
+  VOLUME_MIN_CUSD_RESERVE: z.string().optional(),
+  VOLUME_END: z.string().optional(),
+
   // --- Security + ops (added in the hardening pass) ---
   // HMAC secret for signed session cookies. MUST be distinct from ENCRYPTION_KEY
   // (never reuse the wallet-encryption key for sessions). 32+ random bytes hex.

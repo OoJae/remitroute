@@ -1,0 +1,23 @@
+# Tagged on-chain volume engine (Most-Revenue track): a cUSD<->USDT Mento swap
+# loop that ping-pongs the owner wallet's float so the same capital is counted
+# as volume repeatedly, at only spread + gas cost. Gated by VOLUME_ENABLED and
+# self-stops at VOLUME_END. A clean exit stays stopped; only failures restart.
+# Isolated from the heartbeat engine. Install to /etc/systemd/system/ on the VPS.
+
+[Unit]
+Description=RemitRoute volume engine (cUSD<->USDT Mento loop)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/mento-fx/scripts/volume-loop.ts
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target
