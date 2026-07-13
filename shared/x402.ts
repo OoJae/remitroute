@@ -302,9 +302,11 @@ export function celoFacilitator(baseUrl: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function settle(payload: any, requirements: any) {
     try {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (config.X402_FACILITATOR_API_KEY) headers["X-API-Key"] = config.X402_FACILITATOR_API_KEY;
       const res = await fetch(`${baseUrl.replace(/\/$/, "")}/settle`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({
           x402Version: payload?.x402Version ?? 1,
           paymentPayload: payload,

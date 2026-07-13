@@ -119,6 +119,9 @@ const schema = z.object({
   // this external x402 facilitator so payments are counted on the hackathon
   // leaderboard. Unset = self-hosted facilitator (not counted).
   X402_FACILITATOR_URL: z.string().url().optional(),
+  // X-API-Key the Celo facilitator requires on /verify and /settle (issued by
+  // the Celo team). Without it those endpoints 401.
+  X402_FACILITATOR_API_KEY: z.string().optional(),
   // Dedicated, minimally-funded relayer that submits x402 settlements. Kept
   // separate from AGENT_PRIVATE_KEY so an attacker forcing settlements cannot
   // drain the engine's gas wallet. Falls back to AGENT_PRIVATE_KEY if unset.
