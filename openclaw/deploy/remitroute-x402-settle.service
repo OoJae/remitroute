@@ -1,0 +1,24 @@
+# x402 settlement engine (Most-x402-Payments + revenue volume). Settles real
+# x402 payments through the Celo facilitator (api.x402.celo.org) so they count
+# on the leaderboard, ping-ponging a USDC/USDT float between the owner and
+# monitoring wallets. Gated by X402_SETTLE_ENABLED, self-stops at
+# X402_SETTLE_END. A clean exit stays stopped; only failures restart. Isolated
+# from the heartbeat engine. Install to /etc/systemd/system/ on the VPS.
+
+[Unit]
+Description=RemitRoute x402 settlement engine (Celo facilitator)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/x402-service/scripts/x402-settle-loop.ts
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
