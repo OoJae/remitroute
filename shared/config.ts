@@ -115,6 +115,10 @@ const schema = z.object({
     .default("$0.01")
     .refine((v) => /^\$?\d+(\.\d+)?$/.test(v.trim()), "X402_PRICE must look like $0.01"),
   X402_PAYTO: z.string().optional(), // defaults to the agent owner wallet
+  // When set (e.g. https://api.x402.celo.org), the paid route settles through
+  // this external x402 facilitator so payments are counted on the hackathon
+  // leaderboard. Unset = self-hosted facilitator (not counted).
+  X402_FACILITATOR_URL: z.string().url().optional(),
   // Dedicated, minimally-funded relayer that submits x402 settlements. Kept
   // separate from AGENT_PRIVATE_KEY so an attacker forcing settlements cannot
   // drain the engine's gas wallet. Falls back to AGENT_PRIVATE_KEY if unset.

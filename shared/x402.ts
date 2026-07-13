@@ -265,3 +265,91 @@ export function localFacilitator() {
   const fac = { accepts, settle, settlement: state } as any;
   return fac;
 }
+
+// Facilitator that forwards settlement to the CELO x402 facilitator
+// (api.x402.celo.org) instead of self-broadcasting. This is what the hackathon
+// counts: the Celo facilitator sends the settlement tx itself (paying its own
+// gas) and credits it to our registered payTo wallet. accepts() advertises the
+// same 402 requirements; settle() POSTs the caller's signed authorization to the
+// facilitator's standard /settle endpoint and records the returned tx.
+export function celoFacilitator(baseUrl: string) {
+  const network = "eip155:42220";
+  const state: { last: SettlementInfo | null } = { last: null };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function accepts(args: any) {
+    const price = args.price as { amount: string; asset: { address: string; decimals: number } };
+    const requirement = {
+      scheme: "exact",
+      network,
+      maxAmountRequired: String(price.amount),
+      resource: args.resourceUrl,
+      description: args.routeConfig?.description ?? "",
+      mimeType: args.routeConfig?.mimeType ?? "application/json",
+      payTo: x402PayTo(),
+      maxTimeoutSeconds: 86400,
+      asset: price.asset.address,
+      outputSchema: { input: { type: "http", method: args.method ?? "GET", discoverable: true } },
+      extra: { name: "USDC", version: "2", primaryType: "TransferWithAuthorization" },
+    };
+    return {
+      status: 402 as const,
+      responseHeaders: { "Content-Type": "application/json" },
+      responseBody: { x402Version: 2, error: "Payment required", accepts: [requirement] },
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function settle(payload: any, requirements: any) {
+    try {
+      const res = await fetch(`${baseUrl.replace(/\/$/, "")}/settle`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          x402Version: payload?.x402Version ?? 1,
+          paymentPayload: payload,
+          paymentRequirements: requirements,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json().catch(() => ({}))) as any;
+      const transaction: string = body.transaction ?? body.txHash ?? "";
+      const payer: string = body.payer ?? payload?.payload?.authorization?.from ?? "";
+      if (res.ok && body.success === true) {
+        state.last = { transaction, payer, value: String(requirements?.maxAmountRequired ?? "") };
+        log.info({ transaction, payer }, "x402 settled via Celo facilitator");
+        return { success: true as const, transaction, network, payer };
+      }
+      log.warn({ status: res.status, body }, "Celo facilitator settle failed");
+      return {
+        success: false as const,
+        errorReason: body.errorReason ?? "facilitator_error",
+        errorMessage: body.errorMessage ?? `settle returned ${res.status}`,
+        network,
+        transaction: "",
+        payer,
+      };
+    } catch (err) {
+      return {
+        success: false as const,
+        errorReason: "facilitator_unreachable",
+        errorMessage: (err as Error).message,
+        network,
+        transaction: "",
+        payer: "",
+      };
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fac = { accepts, settle, settlement: state } as any;
+  return fac;
+}
+
+// The facilitator the paid route should use: the Celo facilitator when
+// X402_FACILITATOR_URL is set (so settlements are counted on the hackathon
+// leaderboard), else our self-hosted one.
+export function paymentFacilitator() {
+  return config.X402_FACILITATOR_URL ? celoFacilitator(config.X402_FACILITATOR_URL) : localFacilitator();
+}

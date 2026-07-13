@@ -5,7 +5,7 @@ import { formatUnits, parseUnits } from "viem";
 import { settlePayment } from "thirdweb/x402";
 import { celo } from "thirdweb/chains";
 import { config } from "../../../shared/config.js";
-import { localFacilitator, x402PayTo, x402Price } from "../../../shared/x402.js";
+import { paymentFacilitator, x402PayTo, x402Price } from "../../../shared/x402.js";
 import { getMento, resolveMentoToken } from "../../../shared/mento.js";
 import { db } from "../../../shared/db/client.js";
 import { treasuryActions } from "../../../shared/db/schema.js";
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
   // Settle the payment (returns 402 with requirements when unpaid; on a paid and
   // valid request, submits the caller's EIP-3009 authorization onchain on Celo
   // after our pre-broadcast economic validation in localFacilitator.settle).
-  const fac = localFacilitator();
+  const fac = paymentFacilitator();
   let result;
   try {
     result = await settlePayment({
