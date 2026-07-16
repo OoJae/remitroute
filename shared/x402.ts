@@ -304,13 +304,51 @@ export function celoFacilitator(baseUrl: string) {
     try {
       const headers: Record<string, string> = { "content-type": "application/json" };
       if (config.X402_FACILITATOR_API_KEY) headers["X-API-Key"] = config.X402_FACILITATOR_API_KEY;
+
+      // The live Celo facilitator only accepts the v1 envelope with network "celo";
+      // the v2 / "eip155:42220" shape comes back "unsupported_scheme" (this is why
+      // x402-settle-loop.ts hand-signs v1). We still ADVERTISE eip155:42220 in
+      // accepts() so the paying client derives the right EIP-712 domain (chainId
+      // 42220), then translate to v1 here. The signature is over
+      // TransferWithAuthorization and is independent of the network label, so it
+      // stays valid across the rewrite.
+      const auth = payload?.payload?.authorization ?? {};
+      const v1Payload = {
+        x402Version: 1,
+        scheme: "exact",
+        network: "celo",
+        payload: {
+          signature: payload?.payload?.signature,
+          authorization: {
+            from: auth.from,
+            to: auth.to,
+            value: String(auth.value ?? requirements?.maxAmountRequired ?? ""),
+            validAfter: String(auth.validAfter ?? "0"),
+            validBefore: String(auth.validBefore ?? ""),
+            nonce: auth.nonce,
+          },
+        },
+      };
+      const v1Requirements = {
+        scheme: "exact",
+        network: "celo",
+        maxAmountRequired: String(requirements?.maxAmountRequired ?? ""),
+        resource: requirements?.resource,
+        description: requirements?.description ?? "",
+        mimeType: requirements?.mimeType ?? "application/json",
+        payTo: requirements?.payTo ?? x402PayTo(),
+        maxTimeoutSeconds: requirements?.maxTimeoutSeconds ?? 86400,
+        asset: requirements?.asset,
+        extra: { name: "USDC", version: "2" },
+      };
+
       const res = await fetch(`${baseUrl.replace(/\/$/, "")}/settle`, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          x402Version: payload?.x402Version ?? 1,
-          paymentPayload: payload,
-          paymentRequirements: requirements,
+          x402Version: 1,
+          paymentPayload: v1Payload,
+          paymentRequirements: v1Requirements,
         }),
         signal: AbortSignal.timeout(30000),
       });

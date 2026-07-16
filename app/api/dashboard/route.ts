@@ -105,6 +105,11 @@ export async function GET() {
     })
     .from(executions)
     .leftJoin(users, eq(executions.userId, users.id))
+    // Agent-operated fleet wallets are ours, not customers. This panel reads as a
+    // map of real people using RemitRoute, so counting fleet wallets here would
+    // invent a user base. Their activity is real and still counts as volume and
+    // still appears in the reasoning feed, just never as a person in a city.
+    .where(sql`coalesce(${users.isFleet}, false) = false`)
     .groupBy(users.city, users.country)
     .orderBy(desc(sql`max(${executions.createdAt})`))
     .limit(50);
@@ -160,6 +165,7 @@ export async function GET() {
       txHash: executions.txHash,
       createdAt: executions.createdAt,
       city: users.city,
+      isFleet: users.isFleet,
       rationale: executions.rationale,
     })
     .from(executions)
@@ -170,7 +176,9 @@ export async function GET() {
   const recent = recentRows.map((r) => ({
     id: r.id,
     kind: r.kind,
-    city: r.city ?? "Unknown",
+    // A fleet wallet is labelled as such rather than shown as a city, so a reader
+    // never mistakes our own agent for a person somewhere.
+    city: r.isFleet ? "Agent fleet" : r.city ?? "Unknown",
     status: r.status,
     // Bucket amounts to 1 significant figure so individual transfers are not
     // enumerable from the public ticker; keep the token labels for context.

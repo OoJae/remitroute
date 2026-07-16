@@ -13,27 +13,43 @@ import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js"
 import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
-const MAX_CUSD = 5; // hard safety ceiling
+// Per-transfer safety ceiling. Env-configurable so fleet provisioning can seed a
+// larger float in one call, but it still refuses an unbounded transfer.
+const maxCusd = (): number => Number(process.env.FLEET_FUND_MAX_CUSD ?? 5);
 
-async function main(toArg: string, amountArg: string, execute: boolean): Promise<void> {
+export interface FundExecArgs {
+  to: string;
+  amount: string;
+  execute?: boolean;
+  // Defaults to cUSD. x402 payers need USDC, since x402Price() is denominated in
+  // USDC (it is the Celo stable with a standard EIP-3009 permit domain).
+  token?: string;
+}
+
+// Transfer cUSD from the agent OWNER wallet to an execution wallet. Exported so
+// provision-fleet.ts can seed a whole fleet through the same guarded path rather
+// than reimplementing a raw transfer. Gas is paid in cUSD and the transfer carries
+// the attribution suffix. Returns the tx hash, or null on a preview.
+export async function fundExec(args: FundExecArgs): Promise<string | null> {
   if (!config.AGENT_PRIVATE_KEY) throw new Error("AGENT_PRIVATE_KEY (owner) required");
-  if (!isAddress(toArg)) throw new Error("--to must be a valid address");
-  const amount = Number(amountArg);
-  if (!(amount > 0) || amount > MAX_CUSD) throw new Error(`--amount must be > 0 and <= ${MAX_CUSD}`);
+  if (!isAddress(args.to)) throw new Error("--to must be a valid address");
+  const ceiling = maxCusd();
+  const amount = Number(args.amount);
+  if (!(amount > 0) || amount > ceiling) throw new Error(`--amount must be > 0 and <= ${ceiling}`);
 
-  const token = resolveToken("cUSD");
-  const to = getAddress(toArg);
-  const units = parseUnits(amountArg, token.decimals);
+  const token = resolveToken(args.token ?? "cUSD");
+  const to = getAddress(args.to);
+  const units = parseUnits(args.amount, token.decimals);
   const pk = (config.AGENT_PRIVATE_KEY.startsWith("0x")
     ? config.AGENT_PRIVATE_KEY
     : `0x${config.AGENT_PRIVATE_KEY}`) as Hex;
   const wallet = walletClientFor(pk);
 
   log.info(
-    { from: wallet.account!.address, to, amount: amountArg, token: "cUSD" },
-    execute ? "funding exec wallet from owner" : "PREVIEW only; rerun with --execute",
+    { from: wallet.account!.address, to, amount: args.amount, token: args.token ?? "cUSD" },
+    args.execute ? "funding exec wallet from owner" : "PREVIEW only; rerun with --execute",
   );
-  if (!execute) return;
+  if (!args.execute) return null;
 
   const hash = await wallet.writeContract({
     address: token.address,
@@ -47,6 +63,11 @@ async function main(toArg: string, amountArg: string, execute: boolean): Promise
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as Hex });
   log.info({ hash, status: receipt.status }, "funded exec wallet");
+  return hash;
+}
+
+async function main(toArg: string, amountArg: string, execute: boolean): Promise<void> {
+  await fundExec({ to: toArg, amount: amountArg, execute });
 }
 
 const argv = process.argv.slice(2);
@@ -55,9 +76,14 @@ function val(flag: string): string | undefined {
   return i >= 0 ? argv[i + 1] : undefined;
 }
 
-main(val("--to") ?? "", val("--amount") ?? "0", argv.includes("--execute"))
-  .then(() => process.exit(0))
-  .catch((err) => {
-    log.error({ err }, "fund-exec failed");
-    process.exit(1);
-  });
+// Only run the CLI when invoked directly. provision-fleet.ts imports fundExec, and
+// without this guard that import would fire the CLI and exit the process.
+const invokedDirectly = process.argv[1]?.endsWith("fund-exec.ts");
+if (invokedDirectly) {
+  main(val("--to") ?? "", val("--amount") ?? "0", argv.includes("--execute"))
+    .then(() => process.exit(0))
+    .catch((err) => {
+      log.error({ err }, "fund-exec failed");
+      process.exit(1);
+    });
+}

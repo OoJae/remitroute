@@ -12,6 +12,7 @@ import { schedules, executions, users } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { publicClient } from "../../../../shared/viem.js";
+import { buyRoute, fleetX402Enabled } from "../../../../shared/fxRoute.js";
 import { log } from "../../../../shared/log.js";
 import {
   TransferParams,
@@ -153,11 +154,17 @@ export async function runDue(): Promise<CycleSummary> {
     return summary;
   }
 
-  // Load due, active schedules ordered by next_run.
+  // Load due, active schedules ordered by next_run. When FLEET_ONLY is set the
+  // engine only ever touches agent-operated fleet wallets (users.is_fleet), which
+  // quarantines real human users while the fleet runs live. Reversible by unsetting
+  // the flag, and safer than trusting that no real schedules happen to exist.
+  const fleetOnly = config.FLEET_ONLY
+    ? sql`exists (select 1 from users u where u.id = ${schedules.userId} and u.is_fleet = true)`
+    : undefined;
   const due = await db
     .select()
     .from(schedules)
-    .where(and(eq(schedules.status, "active"), sql`${schedules.nextRun} <= now()`))
+    .where(and(eq(schedules.status, "active"), sql`${schedules.nextRun} <= now()`, fleetOnly))
     .orderBy(asc(schedules.nextRun));
   summary.loaded = due.length;
 
@@ -283,12 +290,31 @@ export async function runDue(): Promise<CycleSummary> {
         }
       } else if (sch.kind === "fx_rebalance") {
         const params = FxRebalanceParams.parse(sch.params);
+        // Before an agent converts currency, it buys a priced route from our own
+        // x402-monetized FX API, so the x402 payment is the by-product of a real
+        // decision rather than a loop. Best effort: buyRoute returns null for a
+        // non-fleet user, when disabled, or on any failure, and the rebalance then
+        // runs exactly as before, unpriced.
+        let routeNote = "";
+        if (fleetX402Enabled()) {
+          const corridor = Object.keys(params.targets).find((s) => s !== "cUSD");
+          if (corridor) {
+            const priced = await buyRoute({
+              userId: sch.userId!,
+              tokenIn: "cUSD",
+              tokenOut: corridor,
+              amountIn: "1",
+            });
+            if (priced) routeNote = `bought a priced cUSD->${corridor} route over x402 at ${priced.rate}; `;
+          }
+        }
         const res = await rebalance(sch.userId!, params.targets, {
           driftThresholdBps: params.driftThresholdBps,
           slippageBps: params.slippageBps,
           scheduleId: sch.id,
           cycleId,
           intentId,
+          routeNote,
         });
         // Only genuine failures count toward the breaker; broadcast_unknown legs
         // are NOT failures (never retried, may double-swap) and cap-skipped legs
@@ -382,6 +408,9 @@ export async function runDue(): Promise<CycleSummary> {
           eq(schedules.status, "active"),
           eq(schedules.kind, "fx_rebalance"),
           sql`${schedules.nextRun} > now()`,
+          // Same fleet quarantine as the due query: the early-drift guardian must
+          // not reach a real user's wallet either.
+          fleetOnly,
         ),
       );
     for (const s of notDue) {

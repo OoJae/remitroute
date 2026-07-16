@@ -24,6 +24,9 @@ export interface RebalanceOpts {
   cycleId?: string;
   // Base idempotency id for this schedule slot; each leg derives a child id.
   intentId?: string;
+  // Prefix for each leg's stored reason, used to record that the agent bought a
+  // priced FX route over x402 before deciding. Purely explanatory.
+  routeNote?: string;
 }
 
 export interface RebalanceResult {
@@ -120,7 +123,7 @@ export async function rebalance(
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
       intentId: legIntent(`${leg.symbol}>cUSD`),
-      rationale: `${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% over), selling the excess into cUSD`,
+      rationale: `${opts.routeNote ?? ""}${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% over), selling the excess into cUSD`,
     });
     tally(result, res.status, sellTokens);
   }
@@ -164,7 +167,7 @@ export async function rebalance(
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
       intentId: legIntent(`cUSD>${leg.symbol}`),
-      rationale: `${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% under), topping it up from cUSD`,
+      rationale: `${opts.routeNote ?? ""}${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% under), topping it up from cUSD`,
     });
     // Only draw down the budget when cUSD actually left the wallet.
     if (res.status === "confirmed" || res.status === "dry_run") budgetUsd -= deficitUsd;

@@ -183,6 +183,12 @@ const schema = z.object({
   BASKET_MA_WINDOW: z.string().optional(),
   BASKET_END: z.string().optional(),
 
+  // Fleet x402: when true, a fleet agent buys a priced FX route over x402 before
+  // an fx_rebalance, so the payment is the by-product of a real decision. Read
+  // from the environment directly by the loop.
+  X402_FLEET_ENABLED: z.string().optional(),
+  X402_FLEET_USDC_FLOAT: z.string().optional(),
+
   // Fleet provisioning (provision-fleet.ts) funding guards. Per-transfer ceiling
   // and an aggregate ceiling across a whole provisioning run, so a loop over many
   // wallets can never overspend the owner treasury.
