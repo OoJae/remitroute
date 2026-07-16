@@ -159,6 +159,41 @@ const schema = z.object({
   VOLUME_MIN_CUSD_RESERVE: z.string().optional(),
   VOLUME_END: z.string().optional(),
 
+  // Autonomous FX treasury basket agent (basket-loop.ts): the generalization of
+  // the single-pair volume loop into a target-weight, multi-currency Mento
+  // rebalancer on the owner wallet. Supersedes VOLUME_* when enabled. The loop
+  // reads these from the environment directly.
+  BASKET_ENABLED: z.string().optional(),
+  BASKET_INTERVAL_SEC: z.string().optional(),
+  // Dedicated wallet for the basket agent, kept separate from the owner wallet so
+  // it never fights the single-pair volume loop over the same float. Falls back to
+  // AGENT_* when unset.
+  BASKET_PRIVATE_KEY: z.string().optional(),
+  BASKET_WALLET_ADDRESS: z.string().optional(),
+  // JSON map of symbol -> target weight, e.g. {"cUSD":0.4,"USDT":0.2,"cKES":0.05}.
+  // Symbols absent from the live Mento pools are skipped at startup.
+  BASKET_TARGETS: z.string().optional(),
+  BASKET_MAX_RUN_USD: z.string().optional(),
+  BASKET_MIN_CUSD_RESERVE: z.string().optional(),
+  // Deep backbone pools take a large leg; thin local-currency pools stay small.
+  BASKET_MAX_LEG_USD: z.string().optional(),
+  BASKET_MAX_EXOTIC_LEG_USD: z.string().optional(),
+  BASKET_DRIFT_BPS: z.string().optional(),
+  BASKET_EXOTIC_SLIPPAGE_BPS: z.string().optional(),
+  BASKET_MA_WINDOW: z.string().optional(),
+  BASKET_END: z.string().optional(),
+
+  // Fleet provisioning (provision-fleet.ts) funding guards. Per-transfer ceiling
+  // and an aggregate ceiling across a whole provisioning run, so a loop over many
+  // wallets can never overspend the owner treasury.
+  FLEET_FUND_MAX_CUSD: z.string().optional(),
+  FLEET_FUND_TOTAL_MAX: z.string().optional(),
+
+  // When true, run-due only processes schedules belonging to fleet wallets
+  // (users.is_fleet). This quarantines real human users while the engine runs
+  // live for the agent fleet, and is reversible by unsetting it.
+  FLEET_ONLY: boolean(false),
+
   // --- Security + ops (added in the hardening pass) ---
   // HMAC secret for signed session cookies. MUST be distinct from ENCRYPTION_KEY
   // (never reuse the wallet-encryption key for sessions). 32+ random bytes hex.

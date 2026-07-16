@@ -23,11 +23,25 @@ interface RecentRow {
   txHash: string | null;
   createdAt: string | null;
   proof: string;
+  rationale: string | null;
+}
+
+// One decision by the autonomous FX treasury agent: a real Mento rebalance of its
+// multi-currency basket, with the drift that triggered it and why.
+interface TreasuryFeedRow {
+  status: string;
+  from: string | null;
+  to: string | null;
+  amountUsd: number | string | null;
+  driftBps: number | string | null;
+  rationale: string | null;
+  createdAt: string | null;
 }
 
 interface DashboardData {
   byCity: CityRow[];
   recent: RecentRow[];
+  treasuryFeed?: TreasuryFeedRow[];
   treasury: { count: number; totalUsd: number };
   reputation: {
     agentId: string | null;
@@ -453,6 +467,11 @@ export default function Dashboard() {
                       <span style={{ color: "rgba(242,237,227,0.65)" }}>
                         {r.amountIn ? `${trim(r.amountIn)} ${r.tokenIn ?? ""}` : ""}
                       </span>
+                      {r.rationale && (
+                        <span style={{ display: "block", color: FAINT, fontSize: 11, marginTop: 2 }}>
+                          {r.rationale}
+                        </span>
+                      )}
                     </span>
                     <a
                       className="rr-feed-proof"
@@ -472,6 +491,61 @@ export default function Dashboard() {
               </div>
             </div>
           </section>
+
+          {/* The autonomous FX treasury agent's own decision log. Every row is a
+              real Mento rebalance of its multi-currency basket, showing the drift
+              that triggered it, so the on-chain activity can be read as decisions
+              rather than taken on trust. */}
+          {data.treasuryFeed && data.treasuryFeed.length > 0 && (
+            <section style={{ borderTop: `1px solid ${BORDER}` }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "16px clamp(20px,2.4vw,32px)",
+                  borderBottom: `1px solid ${BORDER}`,
+                }}
+              >
+                <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: "0.12em", color: GOLD }}>
+                  / AGENT REASONING
+                </div>
+                <div style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, letterSpacing: "0.08em" }}>
+                  FX TREASURY BASKET
+                </div>
+              </div>
+              <div>
+                {data.treasuryFeed.map((t, i) => (
+                  <div
+                    key={i}
+                    className="rr-feed-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "62px 132px 1fr 86px",
+                      gap: 10,
+                      padding: "12px clamp(20px,2.4vw,32px)",
+                      fontFamily: MONO,
+                      fontSize: 12,
+                      borderBottom: "1px solid rgba(242,237,227,0.05)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span style={{ color: FAINT }}>{hhmm(t.createdAt)}</span>
+                    <span style={{ color: GOLD }}>
+                      {t.from ?? "?"} {"->"} {t.to ?? "?"}
+                      {t.amountUsd != null && (
+                        <span style={{ color: "rgba(242,237,227,0.65)" }}> ${trim(String(t.amountUsd))}</span>
+                      )}
+                    </span>
+                    <span style={{ color: FAINT, fontSize: 11 }}>{t.rationale ?? ""}</span>
+                    <span style={{ textAlign: "right", color: statusColor(t.status) }}>
+                      {t.status.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <footer
             style={{

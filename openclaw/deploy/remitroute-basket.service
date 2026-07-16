@@ -1,0 +1,26 @@
+# Autonomous FX treasury basket agent: holds a multi-currency Mento basket at
+# target value weights on the owner wallet and trades the most drifted leg back
+# through the cUSD hub, tilted by a per-leg moving average. Supersedes the
+# single-pair volume engine (set VOLUME_ENABLED=false): same capital and tagging,
+# but the volume is the by-product of a real decision and every swap is stored
+# with the sentence explaining it. Gated by BASKET_ENABLED, self-stops at
+# BASKET_END or BASKET_MAX_RUN_USD. A clean exit stays stopped; only failures
+# restart. Isolated from the heartbeat engine. Install to /etc/systemd/system/.
+
+[Unit]
+Description=RemitRoute FX treasury basket agent (multi-currency Mento rebalancer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/remitroute
+EnvironmentFile=/root/remitroute/.env
+Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
+ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/mento-fx/scripts/basket-loop.ts
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

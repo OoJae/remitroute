@@ -223,6 +223,7 @@ export async function runDue(): Promise<CycleSummary> {
           scheduleId: sch.id,
           cycleId,
           intentId,
+          rationale: `scheduled ${sch.cadence} ${sch.kind === "bill_drip" ? "bill payment" : "remittance"}: sending ${params.amount} ${params.token} to an allowlisted recipient`,
         });
         outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "dca") {
@@ -237,6 +238,7 @@ export async function runDue(): Promise<CycleSummary> {
           scheduleId: sch.id,
           cycleId,
           intentId,
+          rationale: `scheduled ${sch.cadence} buy: converting ${params.amount} ${params.tokenIn} into ${params.tokenOut}`,
         });
         outcome = account(summary, res.status, Number(params.amount));
       } else if (sch.kind === "savings_sweep") {
@@ -275,6 +277,7 @@ export async function runDue(): Promise<CycleSummary> {
             scheduleId: sch.id,
             cycleId,
             intentId,
+            rationale: `sweeping ${(params.pct * 100).toFixed(0)}% of idle ${params.asset} into Aave: ${amount} of ${available.toFixed(6)} available (balance ${balance.toFixed(6)}, keeping ${minLiquid} liquid)`,
           });
           outcome = account(summary, res.status, Number(amount));
         }

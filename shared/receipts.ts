@@ -40,6 +40,8 @@ export interface ReceiptRow {
   amountOut?: string | null;
   tokenOut?: string | null;
   error?: string | null;
+  // Why the agent took this action, captured at decision time.
+  rationale?: string | null;
   createdAt?: Date | string | null;
 }
 
@@ -117,6 +119,7 @@ export function formatReceipt(row: ReceiptRow): string {
     txHash: row.txHash ?? null,
     createdAt: row.createdAt ?? null,
   });
+  if (row.rationale) lines.push(`<i>why: ${row.rationale}</i>`);
   lines.push(`proof <code>${proof.slice(0, 18)}…</code>`);
   return lines.join("\n");
 }

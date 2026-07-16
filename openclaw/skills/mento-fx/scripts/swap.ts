@@ -36,6 +36,7 @@ const ArgSchema = z.object({
   scheduleId: z.string().uuid().optional(),
   cycleId: z.string().uuid().optional(),
   intentId: z.string().optional(),
+  rationale: z.string().optional(),
 });
 
 export interface SwapArgs {
@@ -48,6 +49,8 @@ export interface SwapArgs {
   scheduleId?: string;
   cycleId?: string;
   intentId?: string;
+  // Why this swap fired, captured by the caller at decision time.
+  rationale?: string;
 }
 
 export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?: string }> {
@@ -79,6 +82,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       usdValue: usd,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
+      rationale: args.rationale,
       error: cap.reason ?? "cap breach",
     });
     return { status: "skipped_cap" };
@@ -119,6 +123,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         from: user.walletAddress,
         tokenIn: args.tokenIn,
         tokenOut: args.tokenOut,
+      rationale: args.rationale,
         amountIn: args.amountIn,
         quote: formatUnits(quote, tokenOut.decimals),
         amountOutMin: formatUnits(amountOutMin, tokenOut.decimals),
@@ -141,6 +146,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       tokenIn: args.tokenIn,
       amountOut: outFormatted,
       tokenOut: args.tokenOut,
+      rationale: args.rationale,
     });
     return { status: "dry_run" };
   }
@@ -159,6 +165,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       usdValue: usd,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
+      rationale: args.rationale,
     });
     if (id === null) {
       log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate swap");
@@ -211,6 +218,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         tokenIn: args.tokenIn,
         amountOut: outFormatted,
         tokenOut: args.tokenOut,
+      rationale: args.rationale,
       });
     }
     return { status, txHash };
@@ -218,7 +226,8 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
     const message = err instanceof Error ? err.message : String(err);
     const status = await reconcileTx(txHash);
     log.error(
-      { err, tokenIn: args.tokenIn, tokenOut: args.tokenOut, reconciled: status },
+      { err, tokenIn: args.tokenIn, tokenOut: args.tokenOut,
+      rationale: args.rationale, reconciled: status },
       "swap error; reconciled",
     );
     if (pendingId) {
@@ -235,6 +244,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         usdValue: usd,
         tokenIn: args.tokenIn,
         tokenOut: args.tokenOut,
+      rationale: args.rationale,
         error: status === "confirmed" ? undefined : message,
       });
     }
@@ -255,6 +265,7 @@ interface SwapRow {
   amountOut?: string;
   tokenOut: string;
   error?: string;
+  rationale?: string;
 }
 
 async function recordSwap(row: SwapRow): Promise<void> {
@@ -274,6 +285,7 @@ async function recordSwap(row: SwapRow): Promise<void> {
       tokenOut: row.tokenOut,
       feeCurrency: config.FEE_CURRENCY,
       error: row.error ?? null,
+      rationale: row.rationale ?? null,
     })
     .returning();
   queueReceipt(inserted);

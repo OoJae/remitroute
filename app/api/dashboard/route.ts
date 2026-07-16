@@ -160,6 +160,7 @@ export async function GET() {
       txHash: executions.txHash,
       createdAt: executions.createdAt,
       city: users.city,
+      rationale: executions.rationale,
     })
     .from(executions)
     .leftJoin(users, eq(executions.userId, users.id))
@@ -182,6 +183,10 @@ export async function GET() {
     // action (including txHash) for independent verification without disclosing it.
     createdAt: coarseTimestamp(r.createdAt),
     proof: executionProofHash(r),
+    // Why the agent took this action, captured at decision time. Safe to publish:
+    // it describes the rule and the arithmetic, never a counterparty address (the
+    // transfer paths phrase recipients as allowlist labels, not addresses).
+    rationale: r.rationale,
   }));
 
   // x402 treasury revenue.
@@ -268,5 +273,34 @@ export async function GET() {
     })),
   };
 
-  return NextResponse.json({ byCity, recent, treasury, reputation, metrics, safety });
+  // The autonomous FX treasury agent's own decision log. Each row is a real Mento
+  // rebalance of the agent's multi-currency basket, stored with the drift that
+  // triggered it and the sentence explaining it. This is the clearest public
+  // evidence that the agent's on-chain activity is a decision rather than a loop.
+  const treasuryRows = await db
+    .select({
+      strategy: treasuryActions.strategy,
+      status: treasuryActions.status,
+      detail: treasuryActions.detail,
+      createdAt: treasuryActions.createdAt,
+    })
+    .from(treasuryActions)
+    .where(eq(treasuryActions.strategy, "fx_treasury"))
+    .orderBy(desc(treasuryActions.createdAt))
+    .limit(15);
+
+  const treasuryFeed = treasuryRows.map((r) => {
+    const d = (r.detail ?? {}) as Record<string, unknown>;
+    return {
+      status: r.status,
+      from: (d.from as string) ?? null,
+      to: (d.to as string) ?? null,
+      amountUsd: d.amountUsd ?? null,
+      driftBps: d.driftBps ?? null,
+      rationale: (d.rationale as string) ?? null,
+      createdAt: coarseTimestamp(r.createdAt),
+    };
+  });
+
+  return NextResponse.json({ byCity, recent, treasury, treasuryFeed, reputation, metrics, safety });
 }

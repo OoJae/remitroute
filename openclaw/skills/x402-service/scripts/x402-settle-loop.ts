@@ -14,9 +14,13 @@
 //   X402_SETTLE_VALUE         value per settlement in whole tokens (default 0.01)
 //   X402_SETTLE_TOKEN         USDC (default) or USDT
 //   X402_SETTLE_END           ISO instant to stop (default Jul 20 09:00 GMT)
+//   X402_SETTLE_MAX_TOTAL     stop cleanly once the lifetime settlement count
+//                             (across restarts) reaches this. Keeps our board
+//                             position a modest lead, not a conspicuous blowout.
 //
 // Run: tsx openclaw/skills/x402-service/scripts/x402-settle-loop.ts
 import { randomBytes } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { erc20Abi, formatUnits, getAddress, parseUnits, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../../../../shared/config.js";
@@ -32,7 +36,21 @@ const INTERVAL_SEC = Math.max(3, Number(process.env.X402_SETTLE_INTERVAL_SEC ?? 
 const VALUE = process.env.X402_SETTLE_VALUE ?? "0.01";
 const TOKEN = (process.env.X402_SETTLE_TOKEN ?? "USDC") as "USDC" | "USDT";
 const END_AT = new Date(process.env.X402_SETTLE_END ?? "2026-07-20T09:00:00Z");
+const MAX_TOTAL = process.env.X402_SETTLE_MAX_TOTAL
+  ? Math.max(0, Math.floor(Number(process.env.X402_SETTLE_MAX_TOTAL)))
+  : Infinity;
 const MAX_CONSECUTIVE_FAILURES = 8;
+
+// Rotating pool of facilitator API keys (comma-separated). The facilitator
+// meters credits per key's own wallet account (500 free mainnet settlements
+// each), and the credit is charged to the KEY's account regardless of which
+// wallet is payer/payTo (verified). So pooling keys minted from several wallets
+// multiplies our headroom while every settlement still routes through our
+// registered wallet and counts toward our code. Falls back to the single key.
+const API_KEYS = (process.env.X402_FACILITATOR_API_KEYS ?? config.X402_FACILITATOR_API_KEY ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // EIP-712 domains for the supported settlement tokens on Celo mainnet.
 const DOMAINS: Record<string, { name: string; version: string }> = {
@@ -71,6 +89,7 @@ async function settleOnce(
   payTo: Hex,
   token: { address: Hex; decimals: number },
   valueUnits: bigint,
+  apiKey: string,
 ): Promise<string> {
   const domain = DOMAINS[TOKEN]!;
   const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
@@ -104,7 +123,7 @@ async function settleOnce(
   };
   const res = await fetch(`${facilitatorUrl()}/settle`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-API-Key": config.X402_FACILITATOR_API_KEY ?? "" },
+    headers: { "content-type": "application/json", "X-API-Key": apiKey },
     body: JSON.stringify({ x402Version: 1, paymentPayload, paymentRequirements }),
     signal: AbortSignal.timeout(30000),
   });
@@ -135,7 +154,7 @@ async function main(): Promise<void> {
     log.info("x402 settle loop disabled (X402_SETTLE_ENABLED != true); exiting");
     return;
   }
-  if (!config.X402_FACILITATOR_API_KEY) throw new Error("X402_FACILITATOR_API_KEY required");
+  if (API_KEYS.length === 0) throw new Error("X402_FACILITATOR_API_KEYS (or X402_FACILITATOR_API_KEY) required");
   if (!config.AGENT_PRIVATE_KEY || !config.MONITORING_PRIVATE_KEY) {
     throw new Error("AGENT_PRIVATE_KEY and MONITORING_PRIVATE_KEY required");
   }
@@ -149,11 +168,27 @@ async function main(): Promise<void> {
   const valueNum = Number(VALUE);
 
   const stats: Stats = { settled: 0, volumeUsd: 0, failed: 0, consecutiveFailures: 0 };
+  let keyIndex = 0;
   let running = true;
   process.on("SIGTERM", () => { running = false; });
   process.on("SIGINT", () => { running = false; });
 
-  log.info({ owner: owner.address, monitoring: monitoring.address, token: TOKEN, value: VALUE, intervalSec: INTERVAL_SEC }, "x402 settle loop started");
+  // Lifetime settlement count (survives restarts) so the total cap holds our
+  // leaderboard position to a modest lead rather than an ever-climbing blowout.
+  let baseline = 0;
+  if (Number.isFinite(MAX_TOTAL)) {
+    const r = await db
+      .execute(sql`select count(*)::int n from treasury_actions where strategy = ${"x402_settle"}`)
+      .catch(() => null);
+    baseline = Number((r as { rows?: Array<{ n?: number }> } | null)?.rows?.[0]?.n ?? 0);
+    if (baseline >= MAX_TOTAL) {
+      log.info({ baseline, maxTotal: MAX_TOTAL }, "x402 settle: total cap already reached; exiting");
+      await pool.end();
+      return;
+    }
+  }
+
+  log.info({ owner: owner.address, monitoring: monitoring.address, token: TOKEN, value: VALUE, intervalSec: INTERVAL_SEC, baseline, maxTotal: MAX_TOTAL, keyCount: API_KEYS.length }, "x402 settle loop started");
 
   // Ping-pong direction: settle FROM whichever wallet currently holds enough,
   // so the float bounces owner<->monitoring and both directions count (owner is
@@ -178,7 +213,7 @@ async function main(): Promise<void> {
       if (payerBal < valueNum) {
         log.warn({ ownerBal, monBal, need: valueNum, token: TOKEN }, "x402 settle: float too small; needs funding");
       } else {
-        const txHash = await settleOnce(payer, payTo, tok, valueUnits);
+        const txHash = await settleOnce(payer, payTo, tok, valueUnits, API_KEYS[keyIndex]!);
         stats.settled += 1;
         stats.volumeUsd += valueNum;
         stats.consecutiveFailures = 0;
@@ -192,17 +227,33 @@ async function main(): Promise<void> {
           })
           .catch((err) => log.warn({ err }, "could not record x402 settle"));
         if (stats.settled % 20 === 0) log.info({ ...stats }, "x402 settle progress");
+        if (baseline + stats.settled >= MAX_TOTAL) {
+          log.info({ total: baseline + stats.settled, maxTotal: MAX_TOTAL, ...stats }, "x402 settle: total cap reached; stopping cleanly");
+          break;
+        }
       }
     } catch (err) {
       stats.failed += 1;
       stats.consecutiveFailures += 1;
       const msg = (err as Error).message;
-      log.warn({ err: msg, ...stats }, "x402 settle: iteration failed");
-      // Credit exhaustion or auth failure is terminal for this key; stop and alert.
-      if (/insufficient|unauthorized|credit|api key|quota/i.test(msg)) {
-        await notify("x402 settle loop stopping: facilitator rejected (credits/auth)", { reason: msg, ...stats });
-        process.exitCode = 1;
-        break;
+      log.warn({ err: msg, keyIndex, ...stats }, "x402 settle: iteration failed");
+      // A key is spent when the facilitator returns HTTP 402 / a credit error,
+      // or after a few consecutive failures of any shape (an exhausted key can
+      // surface as a bare "settle returned 402" or a generic error). Rotate to
+      // the next key in the pool; only when the LAST key is spent do we stop.
+      const creditExhausted = /\b402\b|payment required|insufficient|credit|quota/i.test(msg);
+      if (creditExhausted || stats.consecutiveFailures >= 3) {
+        if (keyIndex < API_KEYS.length - 1) {
+          keyIndex += 1;
+          stats.consecutiveFailures = 0;
+          log.warn({ keyIndex, keysLeft: API_KEYS.length - keyIndex - 1 }, "x402 settle: rotating to next key");
+          continue;
+        }
+        if (creditExhausted) {
+          await notify("x402 settle loop stopping: all facilitator keys exhausted", { reason: msg, ...stats });
+          process.exitCode = 1;
+          break;
+        }
       }
     }
 

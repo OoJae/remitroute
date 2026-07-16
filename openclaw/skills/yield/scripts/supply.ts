@@ -30,6 +30,7 @@ const ArgSchema = z.object({
   cycleId: z.string().uuid().optional(),
   kind: z.string().default("savings_sweep"),
   intentId: z.string().optional(),
+  rationale: z.string().optional(),
 });
 
 export interface SupplyArgs {
@@ -40,6 +41,8 @@ export interface SupplyArgs {
   cycleId?: string;
   kind?: string;
   intentId?: string;
+  // Why this supply fired, captured by the caller at decision time.
+  rationale?: string;
 }
 
 export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txHash?: string }> {
@@ -68,6 +71,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.asset,
+      rationale: args.rationale,
       error: cap.reason ?? "cap breach",
     });
     return { status: "skipped_cap" };
@@ -91,6 +95,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.asset,
+      rationale: args.rationale,
     });
     return { status: "skipped_empty" };
   }
@@ -128,6 +133,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.asset,
+      rationale: args.rationale,
     });
     return { status: "dry_run" };
   }
@@ -145,6 +151,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.asset,
+      rationale: args.rationale,
     });
     if (id === null) {
       log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate supply");
@@ -200,6 +207,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         amountIn: args.amount,
         usdValue: usd,
         tokenIn: args.asset,
+      rationale: args.rationale,
       });
     }
     return { status, txHash };
@@ -220,6 +228,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         amountIn: args.amount,
         usdValue: usd,
         tokenIn: args.asset,
+      rationale: args.rationale,
         error: status === "confirmed" ? undefined : message,
       });
     }
@@ -228,6 +237,7 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
 }
 
 interface YieldRow {
+  rationale?: string;
   userId: string;
   scheduleId?: string;
   cycleId?: string;
@@ -255,6 +265,7 @@ async function recordRow(row: YieldRow): Promise<void> {
       tokenIn: row.tokenIn,
       feeCurrency: config.FEE_CURRENCY,
       error: row.error ?? null,
+      rationale: row.rationale ?? null,
     })
     .returning();
   queueReceipt(inserted);

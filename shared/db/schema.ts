@@ -21,6 +21,10 @@ export const users = pgTable("users", {
   walletAddress: text("wallet_address").notNull(),
   walletKeyRef: text("wallet_key_ref").notNull(),
   selfVerified: boolean("self_verified").default(false),
+  // Agent-operated wallet provisioned by provision-fleet.ts (not a human signer).
+  // When FLEET_ONLY is set, run-due only processes these, so a live engine can
+  // never act on a real user's funds while the fleet is running.
+  isFleet: boolean("is_fleet").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
@@ -66,6 +70,10 @@ export const executions = pgTable("executions", {
   // USD-equivalent value of the move, used for spend-cap accounting so
   // local-currency legs are not mis-counted by their nominal token amount.
   usdValue: numeric("usd_value"),
+  // Why this action fired, in one human sentence, captured at decision time
+  // (drift vs target, the sweep arithmetic, or the reason it was skipped). The
+  // dashboard and the receipt render it so the ledger explains itself.
+  rationale: text("rationale"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

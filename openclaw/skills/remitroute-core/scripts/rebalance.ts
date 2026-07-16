@@ -120,6 +120,7 @@ export async function rebalance(
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
       intentId: legIntent(`${leg.symbol}>cUSD`),
+      rationale: `${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% over), selling the excess into cUSD`,
     });
     tally(result, res.status, sellTokens);
   }
@@ -163,6 +164,7 @@ export async function rebalance(
       scheduleId: opts.scheduleId,
       cycleId: opts.cycleId,
       intentId: legIntent(`cUSD>${leg.symbol}`),
+      rationale: `${leg.symbol} is ${(currentWeight * 100).toFixed(1)}% of your basket against a ${(leg.target * 100).toFixed(1)}% target (${(driftBps / 100).toFixed(1)}% under), topping it up from cUSD`,
     });
     // Only draw down the budget when cUSD actually left the wallet.
     if (res.status === "confirmed" || res.status === "dry_run") budgetUsd -= deficitUsd;

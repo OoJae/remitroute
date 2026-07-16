@@ -13,6 +13,9 @@
 //   VOLUME_SWAP_FRACTION     fraction of the source balance per swap (default 0.9)
 //   VOLUME_MIN_CUSD_RESERVE  cUSD held back for gas, never swapped (default 2)
 //   VOLUME_END               ISO instant to stop (default Jul 20 09:00 GMT)
+//   VOLUME_MAX_RUN_USD       stop cleanly once this run has generated this much
+//                            tagged volume (keeps our lead a modest, targeted
+//                            margin rather than an open-ended blowout)
 //
 // Run: tsx openclaw/skills/mento-fx/scripts/volume-loop.ts
 import { erc20Abi, formatUnits, getAddress, parseUnits, type Hex } from "viem";
@@ -33,6 +36,9 @@ const INTERVAL_SEC = Math.max(10, Number(process.env.VOLUME_INTERVAL_SEC ?? 60))
 const SWAP_FRACTION = Math.min(0.95, Math.max(0.1, Number(process.env.VOLUME_SWAP_FRACTION ?? 0.9)));
 const MIN_CUSD_RESERVE = Number(process.env.VOLUME_MIN_CUSD_RESERVE ?? 2);
 const END_AT = new Date(process.env.VOLUME_END ?? "2026-07-20T09:00:00Z");
+const MAX_RUN_USD = process.env.VOLUME_MAX_RUN_USD
+  ? Math.max(0, Number(process.env.VOLUME_MAX_RUN_USD))
+  : Infinity;
 
 // Below this (in whole tokens) a side is too small to bother swapping.
 const DUST = 0.5;
@@ -179,6 +185,10 @@ async function main(): Promise<void> {
             stats.volumeUsd += r.volumeUsd;
             stats.consecutiveFailures = 0;
             if (stats.swaps % 10 === 0) log.info({ ...stats }, "volume loop progress");
+            if (stats.volumeUsd >= MAX_RUN_USD) {
+              log.info({ ...stats, maxRunUsd: MAX_RUN_USD }, "volume loop: run volume cap reached; stopping cleanly");
+              break;
+            }
           } else {
             stats.failed += 1;
             stats.consecutiveFailures += 1;

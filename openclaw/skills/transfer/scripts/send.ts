@@ -39,6 +39,7 @@ const ArgSchema = z.object({
   cycleId: z.string().uuid().optional(),
   // Deterministic idempotency key; when set, the broadcast is reserved first.
   intentId: z.string().optional(),
+  rationale: z.string().optional(),
 });
 
 export interface SendArgs {
@@ -50,6 +51,8 @@ export interface SendArgs {
   scheduleId?: string;
   cycleId?: string;
   intentId?: string;
+  // Why this transfer fired, captured by the caller at decision time.
+  rationale?: string;
 }
 
 export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?: string }> {
@@ -84,6 +87,8 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         status: "skipped_no_recipient",
         amountIn: args.amount,
         tokenIn: args.token,
+        // On a skip the useful reason is why the money did NOT move.
+        rationale: "recipient is not on this user's allowlist, so the transfer was not sent",
         feeCurrency: config.FEE_CURRENCY,
         error: "recipient not on user allowlist",
       });
@@ -108,6 +113,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.token,
+      rationale: cap.reason ?? "a spend cap was reached, so the transfer was not sent",
       feeCurrency: config.FEE_CURRENCY,
       error: cap.reason ?? "cap breach",
     });
@@ -144,6 +150,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.token,
+        rationale: args.rationale,
       feeCurrency: config.FEE_CURRENCY,
     });
     return { status: "dry_run" };
@@ -162,6 +169,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       amountIn: args.amount,
       usdValue: usd,
       tokenIn: args.token,
+      rationale: args.rationale,
     });
     if (id === null) {
       log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate transfer");
@@ -192,6 +200,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         amountIn: args.amount,
         usdValue: usd,
         tokenIn: args.token,
+        rationale: args.rationale,
         feeCurrency: config.FEE_CURRENCY,
       });
     }
@@ -216,6 +225,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         amountIn: args.amount,
         usdValue: usd,
         tokenIn: args.token,
+        rationale: args.rationale,
         feeCurrency: config.FEE_CURRENCY,
         error: status === "confirmed" ? undefined : message,
       });
@@ -225,6 +235,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
 }
 
 interface ExecutionRow {
+  rationale?: string;
   userId: string;
   scheduleId?: string;
   cycleId?: string;
@@ -253,6 +264,7 @@ async function recordExecution(row: ExecutionRow): Promise<void> {
       tokenIn: row.tokenIn,
       feeCurrency: row.feeCurrency,
       error: row.error ?? null,
+      rationale: row.rationale ?? null,
     })
     .returning();
   queueReceipt(inserted);

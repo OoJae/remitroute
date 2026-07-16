@@ -22,6 +22,9 @@ export interface ReserveParams {
   usdValue?: number | null;
   tokenIn?: string;
   tokenOut?: string;
+  // One human sentence for why this action fired, captured at decision time and
+  // stored on the reserved row so the ledger explains itself.
+  rationale?: string;
 }
 
 // Returns the new pending row id, or null if this intent was already reserved.
@@ -40,6 +43,7 @@ export async function reserveIntent(p: ReserveParams): Promise<string | null> {
       tokenIn: p.tokenIn ?? null,
       tokenOut: p.tokenOut ?? null,
       feeCurrency: config.FEE_CURRENCY,
+      rationale: p.rationale ?? null,
     })
     .onConflictDoNothing({ target: [executions.userId, executions.intentId] })
     .returning({ id: executions.id });
