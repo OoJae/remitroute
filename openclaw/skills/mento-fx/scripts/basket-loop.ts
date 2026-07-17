@@ -27,7 +27,8 @@
 //   BASKET_DRIFT_BPS           act once a leg is this far off target (default 25)
 //   BASKET_EXOTIC_SLIPPAGE_BPS tolerance for thin local-currency pools (default 250)
 //   BASKET_MA_WINDOW           moving-average window in ticks (default 20)
-//   BASKET_END                 ISO instant to stop (default Jul 20 09:00 GMT)
+//   BASKET_END                 ISO instant to stop (default Aug 3 12:00 GMT,
+//                              just past the submission deadline)
 //
 // Run: tsx openclaw/skills/mento-fx/scripts/basket-loop.ts
 import { erc20Abi, formatUnits, getAddress, parseUnits, type Hex } from "viem";
@@ -60,7 +61,7 @@ const MAX_EXOTIC_LEG_USD = Number(process.env.BASKET_MAX_EXOTIC_LEG_USD ?? 1);
 const DRIFT_THRESHOLD_BPS = Number(process.env.BASKET_DRIFT_BPS ?? 25);
 const EXOTIC_SLIPPAGE_BPS = Math.min(300, Number(process.env.BASKET_EXOTIC_SLIPPAGE_BPS ?? 250));
 const MA_WINDOW = Number(process.env.BASKET_MA_WINDOW ?? 20);
-const END_AT = new Date(process.env.BASKET_END ?? "2026-07-20T09:00:00Z");
+const END_AT = new Date(process.env.BASKET_END ?? "2026-08-03T12:00:00Z");
 
 const HUB = "cUSD";
 // Deep, near-parity pools: these carry the bulk of the value and tolerate a tight

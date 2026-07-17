@@ -13,6 +13,7 @@ import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { publicClient } from "../../../../shared/viem.js";
 import { buyRoute, fleetX402Enabled } from "../../../../shared/fxRoute.js";
+import { topUpPayerIfLow } from "../../../../shared/x402Topup.js";
 import { log } from "../../../../shared/log.js";
 import {
   TransferParams,
@@ -299,6 +300,10 @@ export async function runDue(): Promise<CycleSummary> {
         if (fleetX402Enabled()) {
           const corridor = Object.keys(params.targets).find((s) => s !== "cUSD");
           if (corridor) {
+            // The route fee flows back to our own payTo, so recycle it rather than
+            // letting each agent bleed its seed down and go quiet.
+            const [payerRow] = await db.select().from(users).where(eq(users.id, sch.userId!));
+            if (payerRow?.isFleet) await topUpPayerIfLow(payerRow.walletAddress);
             const priced = await buyRoute({
               userId: sch.userId!,
               tokenIn: "cUSD",

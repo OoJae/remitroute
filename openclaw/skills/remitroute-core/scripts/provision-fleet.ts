@@ -71,12 +71,14 @@ const PLACES: Array<{ city: string; country: string }> = [
 ];
 
 // A spread of rules per member so the fleet exercises every money path. Cadences
-// are staggered and never finer than the 20 minute heartbeat, and nextRun offsets
-// keep them from all firing in the same cycle.
+// are staggered, never finer than the 20 minute heartbeat, and paced for a run of
+// weeks rather than days: at 20 minute DCA the fleet burns ~$95 of gas over the
+// window for no extra signal, and a real personal-finance agent does not trade
+// every twenty minutes anyway.
 const RULES = [
-  { kind: "dca", cadence: "every:20m", nextRun: "+1m", params: (p: string) => ({ tokenIn: "cUSD", tokenOut: p, amount: "0.05", slippageBps: 100 }) },
-  { kind: "fx_rebalance", cadence: "every:40m", nextRun: "+5m", params: (p: string) => ({ targets: { cUSD: 0.6, [p]: 0.4 } }) },
-  { kind: "savings_sweep", cadence: "every:1h", nextRun: "+9m", params: () => ({ asset: "cUSD", pct: 0.2, minLiquid: 1 }) },
+  { kind: "dca", cadence: "every:2h", nextRun: "+1m", params: (p: string) => ({ tokenIn: "cUSD", tokenOut: p, amount: "0.05", slippageBps: 100 }) },
+  { kind: "fx_rebalance", cadence: "every:2h", nextRun: "+5m", params: (p: string) => ({ targets: { cUSD: 0.6, [p]: 0.4 } }) },
+  { kind: "savings_sweep", cadence: "daily", nextRun: "+9m", params: () => ({ asset: "cUSD", pct: 0.2, minLiquid: 1 }) },
 ];
 
 // Which currency each city's members trade into: the corridor they would actually
@@ -215,7 +217,7 @@ async function main(): Promise<void> {
       user: me.id,
       kind: "remittance" as never,
       params: { to: peer.address, amount: "0.02", token: "cUSD" } as never,
-      cadence: "every:1h",
+      cadence: "every:4h",
       nextRun: "+13m",
     });
     log.info({ member: me.address, corridor: me.corridor }, "fleet member rules seeded");
