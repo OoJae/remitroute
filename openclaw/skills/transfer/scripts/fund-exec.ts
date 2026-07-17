@@ -62,6 +62,12 @@ export async function fundExec(args: FundExecArgs): Promise<string | null> {
     chain: celo,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as Hex });
+  // A reverted transfer used to return its hash like a success, so a caller
+  // looping over a fleet would report "funded" for wallets that got nothing.
+  // Fail loudly instead: the retry wrapper can then actually retry it.
+  if (receipt.status !== "success") {
+    throw new Error(`funding transfer reverted (${hash})`);
+  }
   log.info({ hash, status: receipt.status }, "funded exec wallet");
   return hash;
 }
