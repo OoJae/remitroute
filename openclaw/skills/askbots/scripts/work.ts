@@ -211,20 +211,19 @@ async function answerProject(pid: string, project: Project): Promise<boolean> {
   return true;
 }
 
-async function main(): Promise<void> {
-  if (!API_KEY) {
-    log.info("askbots: ASKBOTS_API_KEY not set; nothing to do");
-    return;
-  }
+// One poll-and-answer cycle. Returns how many tasks it delivered and, if the API
+// rate-limited us, how long it asked us to wait.
+async function runOnce(): Promise<{ answered: number; retryAfterSec?: number }> {
   const res = await api("/projects");
   if (res.status === 429) {
     const body = (await res.json().catch(() => ({}))) as { retry_after?: number };
-    log.info({ retryAfter: body.retry_after }, "askbots: rate limited; try next run");
-    return;
+    log.info({ retryAfter: body.retry_after }, "askbots: rate limited");
+    return { answered: 0, retryAfterSec: body.retry_after };
   }
   if (!res.ok) throw new Error(`askbots projects list failed: ${res.status}`);
   const { projects = [] } = (await res.json()) as { projects?: Project[] };
-  log.info({ available: projects.length }, "askbots: projects listed");
+  // Only log when there is something, so a tight poll loop stays quiet when idle.
+  if (projects.length > 0) log.info({ available: projects.length }, "askbots: projects listed");
 
   let answered = 0;
   for (const project of projects) {
@@ -241,7 +240,50 @@ async function main(): Promise<void> {
       log.warn({ err, projectId: pid }, "askbots: project attempt failed");
     }
   }
-  log.info({ answered }, "askbots run complete");
+  if (answered > 0) log.info({ answered }, "askbots: delivered this cycle");
+  return { answered };
+}
+
+async function main(): Promise<void> {
+  if (!API_KEY) {
+    log.info("askbots: ASKBOTS_API_KEY not set; nothing to do");
+    return;
+  }
+  // Paid tasks are claimed within minutes by competing agents, so a 30-minute
+  // timer loses every race. In loop mode we poll continuously; the single-run
+  // path is kept for the legacy timer and for manual invocation.
+  if (process.env.ASKBOTS_LOOP !== "true") {
+    await runOnce();
+    return;
+  }
+
+  const intervalMs = Math.max(5, Number(process.env.ASKBOTS_INTERVAL_SEC ?? 20)) * 1000;
+  let running = true;
+  process.on("SIGTERM", () => { running = false; });
+  process.on("SIGINT", () => { running = false; });
+  log.info({ intervalSec: intervalMs / 1000 }, "askbots: continuous worker started");
+
+  let consecErr = 0;
+  while (running) {
+    let waitMs = intervalMs;
+    try {
+      const r = await runOnce();
+      consecErr = 0;
+      // Honor the API's own backoff when it rate-limits us.
+      if (r.retryAfterSec) waitMs = Math.max(waitMs, r.retryAfterSec * 1000);
+    } catch (err) {
+      consecErr += 1;
+      waitMs = Math.min(60000, intervalMs * Math.min(consecErr, 6));
+      log.warn({ err: (err as Error).message, consecErr }, "askbots: cycle error; backing off");
+    }
+    let left = waitMs;
+    while (running && left > 0) {
+      const slice = Math.min(left, 3000);
+      await new Promise((r) => setTimeout(r, slice));
+      left -= slice;
+    }
+  }
+  log.info("askbots: continuous worker stopped");
 }
 
 const invokedDirectly = process.argv[1]?.endsWith("work.ts");

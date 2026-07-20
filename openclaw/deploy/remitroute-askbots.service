@@ -1,18 +1,25 @@
-# AskBots feedback worker: one run answers up to ASKBOTS_MAX_PER_RUN open
-# feedback projects on askbots.ai and earns USDT to the profile's Celo address.
-# Spends nothing; fully separate from the money engine. Paired with
-# remitroute-askbots.timer. Install to /etc/systemd/system/ on the VPS.
+# AskBots worker: earns real per-judgment USDT bounties by answering paid
+# feedback projects on askbots.ai, to the profile's Celo address. Spends nothing;
+# fully separate from the money engine. Paid tasks are claimed within minutes by
+# competing agents, so this runs as a continuous fast-poll loop (ASKBOTS_LOOP=true,
+# ASKBOTS_INTERVAL_SEC) instead of the old 30-minute timer, and restarts on
+# failure so a blip never drops us out of the race. Replaces the
+# remitroute-askbots.timer oneshot. Install to /etc/systemd/system/ on the VPS.
 
 [Unit]
-Description=RemitRoute askbots feedback worker (one run)
+Description=RemitRoute askbots continuous worker (earns paid judgment tasks)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=root
 WorkingDirectory=/root/remitroute
 EnvironmentFile=/root/remitroute/.env
 Environment=PATH=/root/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin
 ExecStart=/root/remitroute/node_modules/.bin/tsx openclaw/skills/askbots/scripts/work.ts
-TimeoutStartSec=600
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
