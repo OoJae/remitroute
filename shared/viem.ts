@@ -1,9 +1,22 @@
 // Shared viem clients for Celo. Primary plus fallback RPC via the fallback
 // transport, so a single RPC outage does not stop a heartbeat cycle.
 import { createPublicClient, createWalletClient, fallback, http } from "viem";
-import { celo } from "viem/chains";
+import { celo as celoBase } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "./config.js";
+
+// Celo base fees can rise between fee estimation and block inclusion, so a
+// transaction whose maxFeePerGas was computed a moment earlier gets rejected with
+// "fee cap cannot be lower than the block base fee." viem's default 1.2x base-fee
+// multiplier is too thin for that under fleet load (it caused ~35% of fleet txs to
+// fail and tripped the breaker). Widen the cap so it survives normal movement.
+// maxFeePerGas is only a ceiling and Celo charges the actual base fee, so a higher
+// cap costs nothing while eliminating the transient rejections. The cast keeps the
+// celo-specific type (feeCurrency support) intact.
+const celo = {
+  ...celoBase,
+  fees: { ...celoBase.fees, baseFeeMultiplier: 3 },
+} as typeof celoBase;
 
 const transport = fallback([http(config.CELO_RPC), http(config.CELO_RPC_FALLBACK)]);
 
