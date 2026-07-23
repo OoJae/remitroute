@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { db, pool } from "../../../../shared/db/client.js";
 import { users, executions } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
-import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js";
+import { publicClient, walletClientFor, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
@@ -180,6 +180,16 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
   const account = wallet.account!;
   let txHash: string | undefined;
 
+  // Explicit fee cap AND gas limit. The cap avoids the base-fee race
+  // (celoFeeOverrides). The gas limit is set explicitly so viem skips
+  // eth_estimateGas: for a fee-currency (cUSD-gas) tx from a wallet holding no
+  // native CELO, viem's estimateGas does not thread feeCurrency, so the node
+  // prices the probe in native CELO, sees a zero balance and rejects it with
+  // "gas required exceeds allowance (0)" before broadcast. Providing gas skips
+  // that probe; the real send pays gas in cUSD at inclusion as it always has. A
+  // single-hop Mento swap is ~350-450k gas; 600k is safe headroom, approvals ~120k.
+  const feeOverrides = await celoFeeOverrides();
+
   try {
     if (built.approval) {
       const approvalHash = await wallet.sendTransaction({
@@ -188,6 +198,8 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
         to: getAddress(built.approval.to),
         data: withAttribution(built.approval.data as Hex),
         feeCurrency,
+        gas: 120_000n,
+        ...feeOverrides,
       });
       await publicClient.waitForTransactionReceipt({ hash: approvalHash });
       log.info({ approvalHash }, "swap allowance approved");
@@ -199,6 +211,8 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       to: getAddress(built.swap.params.to),
       data: withAttribution(built.swap.params.data as Hex),
       feeCurrency,
+      gas: 600_000n,
+      ...feeOverrides,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

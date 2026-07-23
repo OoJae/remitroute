@@ -33,4 +33,35 @@ export function walletClientFor(privateKey: `0x${string}`) {
   return createWalletClient({ account, chain: celo, transport });
 }
 
+// Explicit fee cap for CIP-64 fee-currency (stablecoin-gas) transactions. The
+// chain-level baseFeeMultiplier above only feeds viem's native-CELO EIP-1559
+// estimation; for a fee-currency send viem pins maxFeePerGas near the fee-currency
+// gas price at estimate time with almost no headroom, so any upward tick before
+// inclusion gets rejected with "fee cap cannot be lower than the block base fee"
+// (this caused ~35% of fleet swaps to fail and auto-paused half the schedules).
+// We set an explicit cap of twice the live gas price, floored at 60 gwei. This is
+// the standard EIP-1559 headroom (base fee cannot rise 2x in the few blocks before
+// inclusion, since each block caps its increase at 12.5%), so it clears the race.
+// It is deliberately NOT larger: maxFeePerGas is a ceiling, but the node reserves
+// gasLimit * maxFeePerGas of the fee currency up front, so an over-large cap makes
+// small-balance agents fail estimation with "gas required exceeds allowance (0)".
+// 2x wins the race while keeping that reservation affordable.
+const FEE_CAP_FLOOR = 60_000_000_000n; // 60 gwei
+const FEE_PRIORITY = 2_000_000_000n; // 2 gwei tip
+export async function celoFeeOverrides(): Promise<{
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}> {
+  let cap = FEE_CAP_FLOOR;
+  try {
+    const live = await publicClient.getGasPrice();
+    const scaled = live * 2n;
+    if (scaled > cap) cap = scaled;
+  } catch {
+    // RPC hiccup: fall back to the floor, which already clears normal base fees.
+  }
+  const priority = FEE_PRIORITY < cap ? FEE_PRIORITY : cap;
+  return { maxFeePerGas: cap, maxPriorityFeePerGas: priority };
+}
+
 export { celo };

@@ -14,7 +14,7 @@ import { users, executions } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
-import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
+import { walletClientFor, publicClient, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
@@ -24,20 +24,21 @@ import { log } from "../../../../shared/log.js";
 // Tokens a user can withdraw. Gas is always paid in cUSD via fee abstraction.
 const WITHDRAW_TOKENS = ["cUSD", "USDC", "cEUR"] as const;
 
-// Explicit, modest gas parameters for the withdraw transfer. A node reserves
-// gasLimit * maxFeePerGas upfront in the fee currency (cUSD) before it will
-// submit, so bounding both keeps that reservation small and deterministic
-// (250000 * 25 gwei ~= 0.00625 cUSD) instead of letting the RPC fill a large
-// one. Celo base fee is a few gwei, so 25 gwei is ample headroom.
+// Explicit gas limit for the withdraw transfer. Providing gas makes viem skip
+// eth_estimateGas (which prices the fee-currency probe in native CELO, of which
+// these wallets hold none, and rejects with "gas required exceeds allowance (0)").
+// The maxFeePerGas cap comes from celoFeeOverrides at send time so it tracks the
+// live base fee (a fixed 25 gwei fails once the base fee rises above it, as it did
+// during congestion). A node reserves gasLimit * maxFeePerGas in cUSD upfront.
 const WITHDRAW_GAS = {
   gas: 250000n,
-  maxFeePerGas: 25_000_000_000n,
-  maxPriorityFeePerGas: 1_000_000_000n,
 } as const;
 
-// cUSD to hold back for a full cUSD withdraw so the upfront gas reservation
-// above is covered. Comfortably exceeds gasLimit * maxFeePerGas.
-const CUSD_GAS_RESERVE = "0.01";
+// cUSD to hold back for a full cUSD withdraw so the upfront gas reservation is
+// covered. The reservation is gasLimit * maxFeePerGas; with the dynamic cap this
+// reaches ~0.10 cUSD under congestion (250000 * ~405 gwei), so hold back enough to
+// stay ahead of that with headroom.
+const CUSD_GAS_RESERVE = "0.2";
 
 const ArgSchema = z.object({
   user: z.string().uuid("user must be a uuid"),
@@ -125,9 +126,10 @@ export async function withdraw(
   const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
 
+  const feeOverrides = await celoFeeOverrides();
   let txHash: string | undefined;
   try {
-    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix() });
+    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix(), ...feeOverrides });
     log.info({ txHash, to, amount: amountStr, token: args.token }, "withdraw sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

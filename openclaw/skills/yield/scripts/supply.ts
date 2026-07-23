@@ -10,7 +10,7 @@ import { db, pool as dbPool } from "../../../../shared/db/client.js";
 import { users, executions } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
-import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js";
+import { publicClient, walletClientFor, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
@@ -165,6 +165,12 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
   const account = wallet.account!;
   let txHash: string | undefined;
 
+  // Explicit fee cap avoids the base-fee race; explicit gas makes viem skip
+  // eth_estimateGas, which prices the fee-currency probe in native CELO (zero
+  // balance) and rejects with "gas required exceeds allowance (0)". See
+  // celoFeeOverrides in shared/viem.ts. Aave supply is ~250-350k gas, approve ~80k.
+  const feeOverrides = await celoFeeOverrides();
+
   try {
     if (needsApproval) {
       const approvalHash = await wallet.writeContract({
@@ -176,6 +182,8 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
         args: [poolAddress, amountUnits],
         feeCurrency,
         dataSuffix: attributionSuffix(),
+        gas: 120_000n,
+        ...feeOverrides,
       });
       await publicClient.waitForTransactionReceipt({ hash: approvalHash });
       log.info({ approvalHash, asset: args.asset }, "Aave pool allowance approved");
@@ -190,6 +198,8 @@ export async function supply(rawArgs: SupplyArgs): Promise<{ status: string; txH
       args: [token.address, amountUnits, owner, 0],
       feeCurrency,
       dataSuffix: attributionSuffix(),
+      gas: 500_000n,
+      ...feeOverrides,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";

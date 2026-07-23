@@ -33,7 +33,7 @@
 // Run: tsx openclaw/skills/mento-fx/scripts/basket-loop.ts
 import { erc20Abi, formatUnits, getAddress, parseUnits, type Hex } from "viem";
 import { config } from "../../../../shared/config.js";
-import { publicClient, walletClientFor, celo } from "../../../../shared/viem.js";
+import { publicClient, walletClientFor, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
 import { withAttribution } from "../../../../shared/attribution.js";
@@ -155,6 +155,11 @@ async function doSwap(
   }
   const feeCurrency = feeCurrencyAdapter();
   const account = wallet.account!;
+  // Explicit fee cap (base-fee race) plus explicit gas so viem skips
+  // eth_estimateGas, which prices the fee-currency probe in native CELO (this
+  // wallet holds none) and rejects with "gas required exceeds allowance (0)". See
+  // celoFeeOverrides in shared/viem.ts. Single-hop Mento swap ~350-450k, approve ~120k.
+  const feeOverrides = await celoFeeOverrides();
   if (built.approval) {
     const approvalHash = await wallet.sendTransaction({
       account,
@@ -162,6 +167,8 @@ async function doSwap(
       to: getAddress(built.approval.to),
       data: withAttribution(built.approval.data as Hex),
       feeCurrency,
+      gas: 120_000n,
+      ...feeOverrides,
     });
     await publicClient.waitForTransactionReceipt({ hash: approvalHash, timeout: RECEIPT_TIMEOUT_MS });
   }
@@ -171,6 +178,8 @@ async function doSwap(
     to: getAddress(built.swap.params.to),
     data: withAttribution(built.swap.params.data as Hex),
     feeCurrency,
+    gas: 600_000n,
+    ...feeOverrides,
   });
   let status: string;
   try {

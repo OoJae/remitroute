@@ -18,7 +18,7 @@ import { users, executions, recipients } from "../../../../shared/db/schema.js";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
-import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
+import { walletClientFor, publicClient, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { decryptKey } from "../../../../shared/crypto.js";
 import { checkCaps } from "../../../../shared/caps.js";
 import { usdValueOf } from "../../../../shared/usdValue.js";
@@ -179,11 +179,16 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   }
 
   // Real send. Decrypt the user sub-wallet key, send through fee abstraction.
+  // Explicit fee cap avoids the base-fee race, and an explicit gas limit makes
+  // viem skip eth_estimateGas, which otherwise prices the fee-currency probe in
+  // native CELO (zero balance) and rejects with "gas required exceeds allowance
+  // (0)". See celoFeeOverrides in shared/viem.ts. An ERC20 transfer is ~50-80k gas.
   const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
+  const feeOverrides = await celoFeeOverrides();
   let txHash: string | undefined;
   try {
-    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix() });
+    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix(), gas: 120_000n, ...feeOverrides });
     log.info({ txHash, to: recipient, amount: args.amount }, "transfer sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
