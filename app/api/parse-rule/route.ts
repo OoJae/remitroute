@@ -34,6 +34,16 @@ export async function POST(request: Request) {
     const rule = await parseRule(userId, parsed.data.text);
     return NextResponse.json(rule);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 422 });
+    return NextResponse.json({ error: friendlyParseError(err) }, { status: 422 });
   }
+}
+
+// A ZodError's .message is a JSON dump of its issues array, which the Mini App
+// would render verbatim; surface the human-readable issue messages instead.
+function friendlyParseError(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    return err.issues.map((i) => i.message).join("; ");
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Could not understand that rule. Try rephrasing.";
 }

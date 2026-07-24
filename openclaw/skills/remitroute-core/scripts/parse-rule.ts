@@ -7,11 +7,12 @@
 import { isAddress } from "viem";
 import { db, pool } from "../../../../shared/db/client.js";
 import { CadenceSchema, computeNextRun } from "../../../../shared/cadence.js";
-import { ScheduleKind, validateParams } from "../../../../shared/scheduleParams.js";
+import { ScheduleKind, validateDraftParams, SEND_TOKEN_SYMBOLS } from "../../../../shared/scheduleParams.js";
 import { parseStructured } from "../../../../shared/llm.js";
 import { log } from "../../../../shared/log.js";
 
-const ALLOWED_TOKENS = ["cUSD", "cKES", "cNGN", "cGHS", "cZAR", "cEUR", "CELO", "USDC", "USDT"];
+// Swap kinds (dca, fx_rebalance) can reach Mento local stables; sends cannot.
+const SWAP_TOKENS = ["cUSD", "cKES", "cNGN", "cGHS", "cZAR", "cEUR", "CELO", "USDC", "USDT"];
 
 const SYSTEM_PROMPT = `You convert a user's plain-language personal-finance rule into a single JSON object for RemitRoute, an autonomous agent on Celo. Reply with ONLY the JSON object, no prose, no code fences.
 
@@ -23,7 +24,8 @@ Schedule kinds and their params:
 - fx_rebalance: keep a basket at target weights. params: { "targets": { SYMBOL: weight, ... } weights are fractions that sum to 1 }
 - yield_withdraw: take savings back out of yield to the wallet. params: { "asset": string (default "cUSD"), "amount": string (a number, or "max" for all) }
 
-Allowed token symbols: ${ALLOWED_TOKENS.join(", ")}. Map "dollars"/"USD" to cUSD, "naira" to cNGN, "shillings"/"KES" to cKES, "cedis" to cGHS, "rand" to cZAR, "euro"/"EUR" to cEUR, "gold"/"CELO" to CELO.
+Token symbols for remittance and bill_drip: ${SEND_TOKEN_SYMBOLS.join(", ")} only. Map "dollars"/"USD"/"mUSD"/"USDm" to cUSD and "euro"/"EUR" to cEUR. Never output cKES, cNGN, cGHS, or cZAR for a send; if the user asks to send one of those, output { "error": "that currency cannot be sent directly; sends support ${SEND_TOKEN_SYMBOLS.join(", ")}" }.
+Token symbols for dca and fx_rebalance: ${SWAP_TOKENS.join(", ")}. Map "naira" to cNGN, "shillings"/"KES" to cKES, "cedis" to cGHS, "rand" to cZAR, "gold"/"CELO" to CELO.
 
 Cadence grammar (pick one string): "once", "daily", "weekly", "weekly:<dow>" where dow is mon|tue|wed|thu|fri|sat|sun, "monthly:<dom>" where dom is 1..28, "every:<N>m" or "every:<N>h".
 Map "every Friday" to "weekly:fri", "on the 1st" to "monthly:1", "every day"/"daily" to "daily", "weekly" to "weekly".
@@ -49,7 +51,10 @@ export async function parseRule(userId: string, text: string): Promise<ParsedRul
 
   const kind = ScheduleKind.parse(raw.kind);
   const cadence = CadenceSchema.parse(raw.cadence);
-  const params = validateParams(kind, raw.params);
+  // Draft validation: a transfer recipient may still be a name or phone here;
+  // the confirm step resolves it and the schedule create route enforces the
+  // strict schema before anything is saved.
+  const params = validateDraftParams(kind, raw.params);
 
   const next = computeNextRun(cadence) ?? new Date();
   const summary = typeof raw.summary === "string" ? raw.summary : `${kind} rule`;
