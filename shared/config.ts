@@ -59,8 +59,10 @@ const schema = z.object({
   // so a permanently failing rule stops burning gas and stops tripping the breaker.
   MAX_CONSECUTIVE_FAILURES: numeric(5),
   // Half-open auto-recovery: a tripped breaker auto-resumes after this many
-  // minutes so a one-off failure burst does not wedge the engine forever.
-  ANOMALY_HALT_COOLDOWN_MIN: numeric(30),
+  // minutes so a one-off failure burst does not wedge the engine forever. Kept
+  // below the ~20-minute heartbeat interval so a halt never silently skips a
+  // full tick (a real user's due send would otherwise wait two ticks).
+  ANOMALY_HALT_COOLDOWN_MIN: numeric(15),
   // A schedule stuck in "processing" longer than this (a crash mid-cycle) is
   // reclaimed back to active at the next cycle start.
   RECLAIM_STALE_MIN: numeric(10),

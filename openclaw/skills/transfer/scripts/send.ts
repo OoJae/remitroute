@@ -6,6 +6,7 @@
 //   pnpm skill:send -- --user <id> --to 0x... --amount 0.01 --token cUSD
 import {
   erc20Abi,
+  formatUnits,
   getAddress,
   isAddress,
   parseUnits,
@@ -27,6 +28,10 @@ import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.
 import { attributionSuffix } from "../../../../shared/attribution.js";
 import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
+
+// Fee-currency (cUSD) to hold back when the transfer would drain the wallet, so
+// the upfront gas reservation is still covered. Matches withdraw-to-user.ts.
+const FEE_GAS_RESERVE = "0.2";
 
 const ArgSchema = z.object({
   user: z.string().uuid("user must be a uuid"),
@@ -96,9 +101,51 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
     }
   }
 
+  // Fee-currency transfers debit gas from the same balance the transfer spends,
+  // so sending the wallet's full balance always reverts (the node takes the fee
+  // first, then transfer(amount) exceeds what is left). Clamp a near-full-balance
+  // send to leave a small gas reserve, mirroring withdraw-to-user.ts, and record
+  // the clamp in the rationale so the receipt explains the difference.
+  let sendAmount = args.amount;
+  let sendUnits = amountUnits;
+  let rationale = args.rationale;
+  if (token.address.toLowerCase() === resolveToken(config.FEE_CURRENCY).address.toLowerCase()) {
+    const balance = (await publicClient.readContract({
+      address: token.address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [getAddress(user.walletAddress)],
+    })) as bigint;
+    const reserve = parseUnits(FEE_GAS_RESERVE, token.decimals);
+    if (balance < sendUnits + reserve) {
+      const clamped = balance - reserve;
+      if (clamped <= 0n) {
+        log.warn({ user: args.user, balance: formatUnits(balance, token.decimals) }, "transfer failed: balance cannot cover the gas reserve");
+        await recordExecution({
+          userId: args.user,
+          scheduleId: args.scheduleId,
+          cycleId: args.cycleId,
+          kind: args.kind,
+          status: "failed",
+          amountIn: args.amount,
+          tokenIn: args.token,
+          rationale: "wallet balance is too low to cover the transfer plus the gas reserve, so nothing was sent",
+          feeCurrency: config.FEE_CURRENCY,
+          error: `balance ${formatUnits(balance, token.decimals)} below gas reserve ${FEE_GAS_RESERVE}`,
+        });
+        return { status: "failed" };
+      }
+      sendUnits = clamped;
+      sendAmount = formatUnits(clamped, token.decimals);
+      const note = `amount clamped from ${args.amount} to ${sendAmount} ${args.token} to leave a ${FEE_GAS_RESERVE} ${config.FEE_CURRENCY} gas reserve`;
+      rationale = rationale ? `${rationale}; ${note}` : note;
+      log.warn({ user: args.user, requested: args.amount, sending: sendAmount }, "transfer amount clamped for gas reserve");
+    }
+  }
+
   // Value the leg in USD so caps (which are USD-denominated) compare correctly
   // for non-1:1 tokens, and record that value on the ledger row.
-  const usd = await usdValueOf(args.token, args.amount);
+  const usd = await usdValueOf(args.token, sendAmount);
 
   // Caps first. Skip and log if a cap would be breached.
   const cap = await checkCaps(args.user, usd);
@@ -124,7 +171,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
     address: token.address,
     abi: erc20Abi,
     functionName: "transfer" as const,
-    args: [recipient, amountUnits] as const,
+    args: [recipient, sendUnits] as const,
     feeCurrency,
   };
 
@@ -135,7 +182,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         from: user.walletAddress,
         to: recipient,
         token: args.token,
-        amount: args.amount,
+        amount: sendAmount,
         feeCurrency,
         chainId: celo.id,
       },
@@ -147,10 +194,10 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       cycleId: args.cycleId,
       kind: args.kind,
       status: "dry_run",
-      amountIn: args.amount,
+      amountIn: sendAmount,
       usdValue: usd,
       tokenIn: args.token,
-        rationale: args.rationale,
+      rationale,
       feeCurrency: config.FEE_CURRENCY,
     });
     return { status: "dry_run" };
@@ -166,10 +213,10 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       cycleId: args.cycleId,
       intentId: args.intentId,
       kind: args.kind,
-      amountIn: args.amount,
+      amountIn: sendAmount,
       usdValue: usd,
       tokenIn: args.token,
-      rationale: args.rationale,
+      rationale,
     });
     if (id === null) {
       log.warn({ intentId: args.intentId, scheduleId: args.scheduleId }, "intent already reserved; skipping duplicate transfer");
@@ -189,7 +236,7 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   let txHash: string | undefined;
   try {
     txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix(), gas: 120_000n, ...feeOverrides });
-    log.info({ txHash, to: recipient, amount: args.amount }, "transfer sent");
+    log.info({ txHash, to: recipient, amount: sendAmount }, "transfer sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
     if (pendingId) {
@@ -202,10 +249,10 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         kind: args.kind,
         status,
         txHash,
-        amountIn: args.amount,
+        amountIn: sendAmount,
         usdValue: usd,
         tokenIn: args.token,
-        rationale: args.rationale,
+        rationale,
         feeCurrency: config.FEE_CURRENCY,
       });
     }
@@ -227,10 +274,10 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
         kind: args.kind,
         status,
         txHash,
-        amountIn: args.amount,
+        amountIn: sendAmount,
         usdValue: usd,
         tokenIn: args.token,
-        rationale: args.rationale,
+        rationale,
         feeCurrency: config.FEE_CURRENCY,
         error: status === "confirmed" ? undefined : message,
       });

@@ -165,6 +165,9 @@ export default function Home() {
   const [rules, setRules] = useState<ScheduleItem[]>([]);
   const [rulesStatus, setRulesStatus] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  // Last engine heartbeat time (from the public dashboard), used to estimate the
+  // next tick so a due rule reads "queued" with a real ETA instead of "due now".
+  const [lastCycleAt, setLastCycleAt] = useState<number | null>(null);
 
   // Detect MiniPay and auto-connect with no connect button.
   useEffect(() => {
@@ -310,6 +313,31 @@ export default function Home() {
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Anchor the next-tick estimate on the engine's last recorded cycle. The
+  // dashboard endpoint is public, so this needs no session. Refresh each minute.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          safety?: { recentCycles?: Array<{ createdAt?: string }> };
+        };
+        const ts = json.safety?.recentCycles?.[0]?.createdAt;
+        if (!cancelled && ts) setLastCycleAt(new Date(ts).getTime());
+      } catch {
+        // Best effort; the card falls back to the plain ~20-minute wording.
+      }
+    };
+    void load();
+    const t = setInterval(() => void load(), 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, []);
 
   // Load the registered agent id (if any) so the Rate control can appear.
@@ -934,7 +962,10 @@ export default function Home() {
         >
           <div style={{ ...label, color: GOLD }}>NEXT EXECUTION TICK</div>
           <p style={{ color: MUTED, marginTop: 8 }}>
-            {ruleLabel(soonest)} runs next at {formatLocal(soonest.nextRun)}.
+            {ruleLabel(soonest)}{" "}
+            {new Date(soonest.nextRun).getTime() - now <= 0
+              ? "is queued for the agent's next tick."
+              : `runs next at ${formatLocal(soonest.nextRun)}.`}
           </p>
           <div
             style={{
@@ -945,11 +976,14 @@ export default function Home() {
               letterSpacing: "0.04em",
             }}
           >
-            {formatCountdown(new Date(soonest.nextRun).getTime() - now)}
+            {new Date(soonest.nextRun).getTime() - now <= 0
+              ? "queued"
+              : formatCountdown(new Date(soonest.nextRun).getTime() - now)}
           </div>
           <p style={{ color: FAINT, fontSize: 12, marginTop: 8, fontFamily: MONO, lineHeight: 1.6 }}>
-            The agent evaluates rules on a ~20-minute heartbeat, so it runs at the
-            first tick on or after this time.
+            {new Date(soonest.nextRun).getTime() - now <= 0
+              ? nextTickEta(lastCycleAt, now)
+              : "The agent evaluates rules on a ~20-minute heartbeat, so it runs at the first tick on or after this time."}
           </p>
         </section>
       )}
@@ -1441,4 +1475,18 @@ function formatLocal(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// The engine ticks roughly every 20 minutes.
+const TICK_MS = 20 * 60 * 1000;
+
+// Explain when a queued rule will actually send, anchored on the engine's last
+// recorded cycle when we have it.
+function nextTickEta(lastCycleAt: number | null, now: number): string {
+  if (lastCycleAt === null) {
+    return "Sends on the agent's next tick, within about 20 minutes.";
+  }
+  const etaMin = Math.ceil((lastCycleAt + TICK_MS - now) / 60_000);
+  if (etaMin <= 0) return "Sends on the very next agent tick, due any moment now.";
+  return `Sends on the agent's next tick, in about ${etaMin} minute${etaMin === 1 ? "" : "s"}.`;
 }

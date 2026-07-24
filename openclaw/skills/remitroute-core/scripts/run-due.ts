@@ -92,6 +92,10 @@ export interface CycleSummary {
   succeeded: number;
   failed: number;
   skipped: number;
+  // Pre-broadcast throws (quote errors, RPC reads, param parses): no money moved
+  // and no ledger row exists, so they are tracked separately and do NOT feed the
+  // anomaly breaker. Only row-backed money-path failures count as `failed`.
+  errors: number;
   volume: number;
   aborted: boolean;
 }
@@ -106,6 +110,7 @@ export async function runDue(): Promise<CycleSummary> {
     succeeded: 0,
     failed: 0,
     skipped: 0,
+    errors: 0,
     volume: 0,
     aborted: false,
   };
@@ -355,9 +360,13 @@ export async function runDue(): Promise<CycleSummary> {
         log.warn({ scheduleId: sch.id, kind: sch.kind }, "unknown schedule kind, skipped");
       }
     } catch (err) {
-      summary.failed += 1;
+      // A throw here happened BEFORE any money moved (quote error, RPC read,
+      // param parse): no ledger row exists. Count it as an error, not a failure,
+      // so transient noise from the fleet cannot trip the money breaker. The
+      // schedule-level retry/auto-pause below still treats it as a failed slot.
+      summary.errors += 1;
       outcome = "failed";
-      log.error({ err, scheduleId: sch.id, kind: sch.kind }, "schedule execution failed");
+      log.error({ err, scheduleId: sch.id, kind: sch.kind }, "schedule execution failed before broadcast");
     } finally {
       // Only a TRANSIENT failure (never-broadcast) is retried on the next
       // heartbeat, bounded by MAX_RETRIES. "reverted" (deterministic) and
@@ -473,6 +482,7 @@ export async function runDue(): Promise<CycleSummary> {
       succeeded: summary.succeeded,
       failed: summary.failed,
       skipped: summary.skipped,
+      errors: summary.errors,
       volume: summary.volume,
       gasPass: summary.gasPass,
       dryRun: config.DRY_RUN,
