@@ -43,7 +43,7 @@ import { computeIntentId } from "../../../../shared/intent.js";
 
 const TRANSFER_KINDS = new Set(["remittance", "bill_drip"]);
 
-type Outcome = "ok" | "skipped" | "failed" | "reverted" | "unknown";
+type Outcome = "ok" | "skipped" | "failed" | "reverted" | "unknown" | "error";
 
 // Classify a money-script result and update the cycle summary. "unknown" is a
 // broadcast whose fate we could not confirm: it is NOT counted as a failure (so
@@ -362,17 +362,21 @@ export async function runDue(): Promise<CycleSummary> {
     } catch (err) {
       // A throw here happened BEFORE any money moved (quote error, RPC read,
       // param parse): no ledger row exists. Count it as an error, not a failure,
-      // so transient noise from the fleet cannot trip the money breaker. The
-      // schedule-level retry/auto-pause below still treats it as a failed slot.
+      // so transient noise from the fleet can neither trip the money breaker nor
+      // accumulate auto-pause strikes; the slot just reschedules to its next
+      // cadence (a closed market reopens on its own).
       summary.errors += 1;
-      outcome = "failed";
+      outcome = "error";
       log.error({ err, scheduleId: sch.id, kind: sch.kind }, "schedule execution failed before broadcast");
     } finally {
       // Only a TRANSIENT failure (never-broadcast) is retried on the next
       // heartbeat, bounded by MAX_RETRIES. "reverted" (deterministic) and
       // "unknown" (possibly mined; retrying could double-send) are NEVER retried.
       // A schedule that keeps hard-failing across cadence slots auto-pauses so it
-      // stops burning gas and stops tripping the breaker.
+      // stops burning gas and stops tripping the breaker. A pre-broadcast "error"
+      // is neither retried tightly nor counted as a strike: it keeps the counter
+      // as-is and reschedules, so a weekend of closed markets cannot pause the
+      // fleet while a genuinely failing schedule still pauses after 5 hard fails.
       const attempts = sch.retryCount ?? 0;
       const hardFail = outcome === "failed" || outcome === "reverted";
       const retriable = outcome === "failed" && attempts < config.MAX_RETRIES;
@@ -389,7 +393,7 @@ export async function runDue(): Promise<CycleSummary> {
           if (hardFail && TRANSFER_KINDS.has(sch.kind)) {
             await notify(`remittance schedule failed (${outcome}) after retries`, { scheduleId: sch.id, kind: sch.kind });
           }
-          if (resetConsec >= config.MAX_CONSECUTIVE_FAILURES) {
+          if (hardFail && resetConsec >= config.MAX_CONSECUTIVE_FAILURES) {
             await db
               .update(schedules)
               .set({ status: "paused", retryCount: 0, consecutiveFailures: resetConsec })

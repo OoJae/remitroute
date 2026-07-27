@@ -29,9 +29,12 @@ import { attributionSuffix } from "../../../../shared/attribution.js";
 import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
-// Fee-currency (cUSD) to hold back when the transfer would drain the wallet, so
-// the upfront gas reservation is still covered. Matches withdraw-to-user.ts.
-const FEE_GAS_RESERVE = "0.2";
+// Gas limit for the ERC20 transfer (also what viem skips estimateGas with). The
+// node reserves gasLimit * maxFeePerGas of the fee currency upfront, so the
+// full-balance clamp below holds back exactly that reservation, not a fixed
+// guess (a fixed 0.2 cUSD was ~4x the real cost and made small fleet wallets
+// fail sends they could comfortably afford).
+const SEND_GAS_LIMIT = 120_000n;
 
 const ArgSchema = z.object({
   user: z.string().uuid("user must be a uuid"),
@@ -104,8 +107,10 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   // Fee-currency transfers debit gas from the same balance the transfer spends,
   // so sending the wallet's full balance always reverts (the node takes the fee
   // first, then transfer(amount) exceeds what is left). Clamp a near-full-balance
-  // send to leave a small gas reserve, mirroring withdraw-to-user.ts, and record
-  // the clamp in the rationale so the receipt explains the difference.
+  // send to leave exactly the upfront gas reservation, and record the clamp in
+  // the rationale so the receipt explains the difference. The fee cap is fetched
+  // here (once per send) and reused for the broadcast below.
+  const feeOverrides = await celoFeeOverrides();
   let sendAmount = args.amount;
   let sendUnits = amountUnits;
   let rationale = args.rationale;
@@ -116,28 +121,31 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
       functionName: "balanceOf",
       args: [getAddress(user.walletAddress)],
     })) as bigint;
-    const reserve = parseUnits(FEE_GAS_RESERVE, token.decimals);
+    const reserve = SEND_GAS_LIMIT * feeOverrides.maxFeePerGas;
     if (balance < sendUnits + reserve) {
       const clamped = balance - reserve;
       if (clamped <= 0n) {
-        log.warn({ user: args.user, balance: formatUnits(balance, token.decimals) }, "transfer failed: balance cannot cover the gas reserve");
+        // Nothing moved and nothing was broadcast: an underfunded wallet is a
+        // skip, not a failure, so it neither strikes the schedule nor feeds the
+        // anomaly breaker.
+        log.warn({ user: args.user, balance: formatUnits(balance, token.decimals) }, "transfer skipped: balance cannot cover the gas reserve");
         await recordExecution({
           userId: args.user,
           scheduleId: args.scheduleId,
           cycleId: args.cycleId,
           kind: args.kind,
-          status: "failed",
+          status: "skipped_low_balance",
           amountIn: args.amount,
           tokenIn: args.token,
           rationale: "wallet balance is too low to cover the transfer plus the gas reserve, so nothing was sent",
           feeCurrency: config.FEE_CURRENCY,
-          error: `balance ${formatUnits(balance, token.decimals)} below gas reserve ${FEE_GAS_RESERVE}`,
+          error: `balance ${formatUnits(balance, token.decimals)} below gas reserve ${formatUnits(reserve, token.decimals)}`,
         });
-        return { status: "failed" };
+        return { status: "skipped_low_balance" };
       }
       sendUnits = clamped;
       sendAmount = formatUnits(clamped, token.decimals);
-      const note = `amount clamped from ${args.amount} to ${sendAmount} ${args.token} to leave a ${FEE_GAS_RESERVE} ${config.FEE_CURRENCY} gas reserve`;
+      const note = `amount clamped from ${args.amount} to ${sendAmount} ${args.token} to leave a ${formatUnits(reserve, token.decimals)} ${config.FEE_CURRENCY} gas reserve`;
       rationale = rationale ? `${rationale}; ${note}` : note;
       log.warn({ user: args.user, requested: args.amount, sending: sendAmount }, "transfer amount clamped for gas reserve");
     }
@@ -232,10 +240,9 @@ export async function send(rawArgs: SendArgs): Promise<{ status: string; txHash?
   // (0)". See celoFeeOverrides in shared/viem.ts. An ERC20 transfer is ~50-80k gas.
   const pk = decryptKey(user.walletKeyRef) as Hex;
   const wallet = walletClientFor(pk);
-  const feeOverrides = await celoFeeOverrides();
   let txHash: string | undefined;
   try {
-    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix(), gas: 120_000n, ...feeOverrides });
+    txHash = await wallet.writeContract({ ...txRequest, account: wallet.account!, chain: celo, dataSuffix: attributionSuffix(), gas: SEND_GAS_LIMIT, ...feeOverrides });
     log.info({ txHash, to: recipient, amount: sendAmount }, "transfer sent");
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });
     const status = receipt.status === "success" ? "confirmed" : "reverted";
