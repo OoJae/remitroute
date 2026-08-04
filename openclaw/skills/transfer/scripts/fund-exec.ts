@@ -9,7 +9,7 @@ import { erc20Abi, getAddress, isAddress, parseUnits, type Hex } from "viem";
 import { config } from "../../../../shared/config.js";
 import { resolveToken } from "../../../../shared/addresses.js";
 import { feeCurrencyAdapter } from "../../../../shared/feeCurrency.js";
-import { walletClientFor, publicClient, celo } from "../../../../shared/viem.js";
+import { walletClientFor, publicClient, celo, celoFeeOverrides } from "../../../../shared/viem.js";
 import { attributionSuffix } from "../../../../shared/attribution.js";
 import { log } from "../../../../shared/log.js";
 
@@ -51,6 +51,10 @@ export async function fundExec(args: FundExecArgs): Promise<string | null> {
   );
   if (!args.execute) return null;
 
+  // Explicit fee cap and gas limit, same as the other money paths: without them a
+  // funding transfer loses the Celo base-fee race ("fee cap cannot be lower than the
+  // block base fee") whenever the base fee ticks up between estimate and inclusion.
+  const feeOverrides = await celoFeeOverrides();
   const hash = await wallet.writeContract({
     address: token.address,
     abi: erc20Abi,
@@ -60,6 +64,8 @@ export async function fundExec(args: FundExecArgs): Promise<string | null> {
     dataSuffix: attributionSuffix(),
     account: wallet.account!,
     chain: celo,
+    gas: 120_000n,
+    ...feeOverrides,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as Hex });
   // A reverted transfer used to return its hash like a success, so a caller
