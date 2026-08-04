@@ -5,7 +5,7 @@
 // defensive floor check, and never swaps without it.
 //
 // Run: tsx openclaw/skills/mento-fx/scripts/swap.ts --user <id> --tokenIn cUSD --tokenOut cKES --amountIn 1 --slippageBps 50
-import { formatUnits, getAddress, parseUnits, type Hex } from "viem";
+import { erc20Abi, formatUnits, getAddress, parseUnits, type Hex } from "viem";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../../../../shared/db/client.js";
@@ -19,12 +19,17 @@ import { usdValueOf } from "../../../../shared/usdValue.js";
 import { reconcileTx, RECEIPT_TIMEOUT_MS } from "../../../../shared/reconcile.js";
 import { reserveIntent, finalizeExecution } from "../../../../shared/execLedger.js";
 import { getMento, resolveMentoToken } from "../../../../shared/mento.js";
+import { resolveToken } from "../../../../shared/addresses.js";
 import { withAttribution } from "../../../../shared/attribution.js";
 import { queueReceipt, flushReceipts } from "../../../../shared/receipts.js";
 import { log } from "../../../../shared/log.js";
 
 // Maximum slippage we ever allow, regardless of requested value.
 const MAX_SLIPPAGE_BPS = 300;
+
+// Gas limit for the swap leg. Also drives the upfront fee-currency reservation the
+// node requires, so the affordability guard below uses the same number.
+const SWAP_GAS_LIMIT = 600_000n;
 
 const ArgSchema = z.object({
   user: z.string().uuid(),
@@ -151,6 +156,43 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
     return { status: "dry_run" };
   }
 
+  // Gas-affordability guard. A CIP-64 swap reserves gasLimit * maxFeePerGas of the
+  // fee currency upfront, and when the wallet cannot cover that the node rejects the
+  // broadcast with a generic "Missing or invalid parameters", which reads as a hard
+  // failure and eventually auto-pauses the schedule. An underfunded wallet is a
+  // skip, not a failure: it neither strikes the schedule nor feeds the breaker, and
+  // it names the shortfall so the wallet can be topped up. The transfer path has the
+  // same guard in send.ts.
+  const feeOverrides = await celoFeeOverrides();
+  const gasReserve = SWAP_GAS_LIMIT * feeOverrides.maxFeePerGas;
+  const feeToken = resolveToken(config.FEE_CURRENCY);
+  const feeBalance = (await publicClient.readContract({
+    address: feeToken.address,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [getAddress(user.walletAddress)],
+  })) as bigint;
+  if (feeBalance < gasReserve) {
+    log.warn(
+      { user: args.user, balance: formatUnits(feeBalance, feeToken.decimals), needed: formatUnits(gasReserve, feeToken.decimals) },
+      "swap skipped: wallet cannot cover the gas reserve",
+    );
+    await recordSwap({
+      userId: args.user,
+      scheduleId: args.scheduleId,
+      cycleId: args.cycleId,
+      kind: args.kind,
+      status: "skipped_low_balance",
+      amountIn: args.amountIn,
+      usdValue: usd,
+      tokenIn: args.tokenIn,
+      tokenOut: args.tokenOut,
+      rationale: `wallet holds ${formatUnits(feeBalance, feeToken.decimals)} ${config.FEE_CURRENCY} but the swap needs ${formatUnits(gasReserve, feeToken.decimals)} reserved for gas, so it was not sent`,
+      error: `fee balance ${formatUnits(feeBalance, feeToken.decimals)} below gas reserve ${formatUnits(gasReserve, feeToken.decimals)}`,
+    });
+    return { status: "skipped_low_balance" };
+  }
+
   // Reserve the intent before broadcasting so a crash-then-reclaim re-run cannot
   // double-swap this leg.
   let pendingId: string | undefined;
@@ -180,16 +222,12 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
   const account = wallet.account!;
   let txHash: string | undefined;
 
-  // Explicit fee cap AND gas limit. The cap avoids the base-fee race
-  // (celoFeeOverrides). The gas limit is set explicitly so viem skips
-  // eth_estimateGas: for a fee-currency (cUSD-gas) tx from a wallet holding no
-  // native CELO, viem's estimateGas does not thread feeCurrency, so the node
-  // prices the probe in native CELO, sees a zero balance and rejects it with
-  // "gas required exceeds allowance (0)" before broadcast. Providing gas skips
-  // that probe; the real send pays gas in cUSD at inclusion as it always has. A
-  // single-hop Mento swap is ~350-450k gas; 600k is safe headroom, approvals ~120k.
-  const feeOverrides = await celoFeeOverrides();
-
+  // Explicit fee cap AND gas limit (feeOverrides fetched above, and reused here so
+  // the affordability guard and the broadcast price gas identically). The cap avoids
+  // the base-fee race; the explicit gas limit makes viem skip eth_estimateGas, which
+  // for a fee-currency tx from a wallet holding no native CELO would price the probe
+  // in CELO, see a zero balance and reject with "gas required exceeds allowance (0)".
+  // A single-hop Mento swap is ~350-450k gas; 600k is safe headroom, approvals ~120k.
   try {
     if (built.approval) {
       const approvalHash = await wallet.sendTransaction({
@@ -211,7 +249,7 @@ export async function swap(rawArgs: SwapArgs): Promise<{ status: string; txHash?
       to: getAddress(built.swap.params.to),
       data: withAttribution(built.swap.params.data as Hex),
       feeCurrency,
-      gas: 600_000n,
+      gas: SWAP_GAS_LIMIT,
       ...feeOverrides,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex, timeout: RECEIPT_TIMEOUT_MS });

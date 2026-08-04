@@ -18,19 +18,30 @@ const celo = {
   fees: { ...celoBase.fees, baseFeeMultiplier: 3 },
 } as typeof celoBase;
 
-const transport = fallback([http(config.CELO_RPC), http(config.CELO_RPC_FALLBACK)]);
+// Reads tolerate any Celo RPC, so they use the fallback pair and survive a single
+// provider outage.
+const readTransport = fallback([http(config.CELO_RPC), http(config.CELO_RPC_FALLBACK)]);
+
+// Broadcasts do NOT use the fallback. Our transactions are CIP-64 (fee paid in a
+// stablecoin via feeCurrency), and not every Celo RPC can decode that tx type: the
+// configured fallback rejects eth_sendRawTransaction with "Missing or invalid
+// parameters", which burned ~175 sends when the primary briefly faltered and viem
+// failed over. Sending only through the primary means a primary outage delays a
+// cycle instead of silently failing every broadcast against an incompatible node.
+// Retries are viem's default per-transport behavior.
+const writeTransport = http(config.CELO_RPC);
 
 // Types are inferred so the celo-specific client (with feeCurrency support on
 // transactions) is preserved. Annotating with the generic PublicClient/WalletClient
 // would collapse that and break feeCurrency typing downstream.
-export const publicClient = createPublicClient({ chain: celo, transport });
+export const publicClient = createPublicClient({ chain: celo, transport: readTransport });
 
 // Build a wallet client bound to the agent account. Caller passes the private
 // key (resolved through config or a decrypted sub-wallet key), so this module
 // never reads the key itself.
 export function walletClientFor(privateKey: `0x${string}`) {
   const account = privateKeyToAccount(privateKey);
-  return createWalletClient({ account, chain: celo, transport });
+  return createWalletClient({ account, chain: celo, transport: writeTransport });
 }
 
 // Explicit fee cap for CIP-64 fee-currency (stablecoin-gas) transactions. The
