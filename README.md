@@ -15,7 +15,7 @@ is growing fastest.
 
 - **Live:** https://remitroute.vercel.app
 - **Onchain identity:** ERC-8004 agent **#9308** on Celo mainnet (chainId 42220), verifiable on agentscan.
-- **Network:** Celo mainnet. Non-custodial. Gas paid in cUSD.
+- **Network:** Celo mainnet. Custodial automation wallet (keys encrypted at rest, withdraw anytime). Gas paid in cUSD.
 
 ## The five money actions
 

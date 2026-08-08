@@ -48,7 +48,7 @@ Five money actions, all live on mainnet:
    safety and halt. Every action is stamped with a validation proof hash on the public
    live dashboard.
 
-Funds stay in the user's own execution wallet (non-custodial) and can be withdrawn anytime.
+Funds sit in a per-user custodial execution wallet (keys AES-256-GCM encrypted at rest) and can be withdrawn back to the user's own wallet anytime.
 
 ## Why it is safe (it moves real money)
 
@@ -102,5 +102,5 @@ Primary:
 Alternate:
 
 > Your money should move on its own. RemitRoute is an always-on agent on @Celo doing
-> recurring savings, FX, and remittances for everyday users, non-custodial, gas in
+> recurring savings, FX, and remittances for everyday users, custodial automation wallet with withdraw-anytime, gas in
 > cUSD, every action proof-stamped onchain. ERC-8004 #9308. https://remitroute.vercel.app @CeloDevs
