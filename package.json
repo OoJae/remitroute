@@ -13,7 +13,8 @@
     "db:ping": "tsx openclaw/skills/remitroute-core/scripts/db-ping.ts",
     "skill:check-gas": "tsx openclaw/skills/fee-abstraction/scripts/check-gas-buffer.ts",
     "skill:send": "tsx openclaw/skills/transfer/scripts/send.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "skill:verify-tag": "tsx openclaw/skills/remitroute-core/scripts/verify-attribution.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

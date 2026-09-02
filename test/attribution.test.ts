@@ -2,6 +2,12 @@ import { describe, it, expect } from "vitest";
 import { toDataSuffix, fromDataSuffix } from "@celo/attribution-tags";
 import { attributionSuffix, withAttribution } from "../shared/attribution.js";
 import { config } from "../shared/config.js";
+import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
+import {
+  CLIENT_ATTRIBUTION_TAG,
+  CLIENT_ATTRIBUTION_SUFFIX,
+  withClientAttribution,
+} from "../shared/attributionClient.js";
 
 describe("attribution suffix wiring", () => {
   it("mirrors ATTRIBUTION_TAG: appends a decodable suffix when set, no-op when unset", () => {
@@ -25,5 +31,33 @@ describe("attribution suffix wiring", () => {
     const tagged = (calldata + toDataSuffix("celo_a1b2c3d4e5f6").slice(2)) as `0x${string}`;
     const decoded = fromDataSuffix(tagged);
     expect(decoded?.codes).toEqual(["celo_a1b2c3d4e5f6"]);
+  });
+});
+
+// The client bundle cannot import shared/attribution.ts (it pulls in dotenv and
+// the server config schema), so shared/attributionClient.ts carries the suffix as
+// a constant. These assertions are what stop that constant from silently drifting
+// away from the configured tag.
+describe("client attribution constant", () => {
+  it("matches what the SDK derives from the configured tag", () => {
+    if (!config.ATTRIBUTION_TAG) return; // unset in CI; server path is a no-op there
+    expect(CLIENT_ATTRIBUTION_TAG).toBe(config.ATTRIBUTION_TAG);
+    expect(CLIENT_ATTRIBUTION_SUFFIX).toBe(toDataSuffix(config.ATTRIBUTION_TAG));
+  });
+
+  it("decodes back to the registered tag", () => {
+    const decoded = fromDataSuffix(CLIENT_ATTRIBUTION_SUFFIX);
+    expect(decoded?.codes).toContain(CLIENT_ATTRIBUTION_TAG);
+  });
+
+  it("survives being appended to real ERC20 transfer calldata", () => {
+    const data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: ["0x000000000000000000000000000000000000dEaD", parseUnits("1", 18)],
+    });
+    const tagged = withClientAttribution(data);
+    expect(tagged.startsWith(data)).toBe(true);
+    expect(fromDataSuffix(tagged)?.codes).toContain(CLIENT_ATTRIBUTION_TAG);
   });
 });

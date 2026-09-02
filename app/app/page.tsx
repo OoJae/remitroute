@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toHex } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
+import { withClientAttribution } from "../../shared/attributionClient.js";
 
 interface AgentInfo {
   agentId: string | null;
@@ -376,7 +377,9 @@ export default function Home() {
           {
             from: address,
             to: CUSD,
-            data,
+            // Carries our ERC-8021 attribution tag so this user-signed transfer
+            // is credited to RemitRoute onchain.
+            data: withClientAttribution(data),
             // Gas paid in cUSD via fee abstraction.
             feeCurrency: CUSD,
           },
@@ -688,7 +691,15 @@ export default function Home() {
         });
         const txHash = (await window.ethereum.request({
           method: "eth_sendTransaction",
-          params: [{ from: address, to: agentInfo.reputationRegistry, data, feeCurrency: CUSD }],
+          params: [
+            {
+              from: address,
+              to: agentInfo.reputationRegistry,
+              // Tagged for the same reason as the funding transfer above.
+              data: withClientAttribution(data),
+              feeCurrency: CUSD,
+            },
+          ],
         })) as string;
         await fetch("/api/feedback", {
           method: "POST",
