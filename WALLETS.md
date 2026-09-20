@@ -54,6 +54,24 @@ single funder, which makes them trivially clusterable, and **we exclude them fro
 any claim we make in any track**. The script that created them was deleted from
 HEAD in commit `9ae78d9` rather than quietly left in place.
 
+## Wallets that are not ours
+
+People who use the Mini App send from their own MiniPay wallets. We do not hold those
+keys, we cannot move funds from them, and they are not listed above. Declaring them as
+wallets we control would be untrue. They do appear on-chain carrying our attribution
+tag, because the app tags the calldata of transactions the user signs so that a transfer
+made through RemitRoute is attributable to RemitRoute.
+
+The first of those senders are friends and family of the team, trying the product in the
+last days before the deadline. We are naming that rather than leaving it to be
+discovered. They are real transfers of the sender's own money to a recipient of their
+choosing, we take no fee, we never custody it, and we are not funding those wallets to
+manufacture volume. Several of them hold balances in a narrow band and two share a
+funder, which a clustering pass will notice; we would rather point at it than have it
+found. If a judge would prefer to discount volume originating from a cluster that close
+to the team, discount it. We would rather this track's number be small and clean than
+large and questioned.
+
 ## What we did not deploy
 
 We have deployed no contracts of our own. Every contract we touch is third-party:
@@ -62,9 +80,21 @@ broker, the Aave V3 pool, and the Celo stablecoin and fee-currency adapter contr
 
 ## What moved, and when
 
-The heartbeat engine has run continuously through the judging window. Between
-28 August and 20 September it attempted 166 scheduled actions and executed none of
-them: every attempt returned `skipped_low_balance` or `skipped_dust`, and not one
-carries a transaction hash. The custodial wallets are empty, so there is nothing to
-move. Our own on-chain value moved in this window is therefore **zero**, and we do
-not claim otherwise anywhere in this submission.
+**From the wallets listed above: nothing.** The heartbeat engine has run continuously
+through the judging window. Between 28 August and 20 September it attempted 166
+scheduled actions and executed none of them: every attempt returned
+`skipped_low_balance` or `skipped_dust`, and not one carries a transaction hash. The
+custodial wallets are empty, so there was nothing to move. That figure is a query over
+our `executions` table, which records every action our own keys signed, and it is the
+complete picture for every address on this page.
+
+**From wallets we do not control: we cannot count it, so we do not.** The Mini App also
+lets a person send straight from their own MiniPay wallet. Those wallets are not ours
+and are not listed above. We never touch the money, and we write nothing to our database
+when it happens, so none of it is in the 166 figure. It does carry our ERC-8021 tag,
+deliberately, so that a transfer a user makes through our app is attributable to us,
+which also means it is visible on-chain and countable by anyone reading the tag.
+
+We therefore quote no total for tagged volume in either direction. The number for the
+Value Moved track is whatever the chain says for `celo_716fa1c99481`. It is not a number
+we are in a position to assert.

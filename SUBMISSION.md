@@ -7,12 +7,29 @@ Judges' Favorite.
 
 **Wallets we control:** all 26 are enumerated in [WALLETS.md](WALLETS.md).
 
-> **On value moved in the judging window: it is zero, and we say so up front.** The
-> heartbeat engine ran continuously from 28 August to 20 September and attempted 166
-> scheduled actions. Every one returned `skipped_low_balance` or `skipped_dust`, and
-> none carries a transaction hash, because the custodial wallets are empty. We are
-> entered in this track on the strength of the rails being real and auditable, not on
-> a number. What we built is below; what it moved this window is nothing.
+> **On value moved in the judging window, and how we measure it.** Two different things
+> move money under our tag, they are counted in two different places, and we are only in
+> a position to count one of them.
+>
+> **Server-executed actions, from the wallets we control: zero.** The heartbeat engine
+> ran continuously from 28 August to 20 September and attempted 166 scheduled actions.
+> Every one returned `skipped_low_balance` or `skipped_dust`, and not one carries a
+> transaction hash, because the custodial wallets are empty. That figure is a query over
+> our `executions` table, which records every action our own keys signed, and for those
+> wallets it is the complete picture.
+>
+> **User-signed transfers, from wallets we do not control: measured on-chain, not by us.**
+> The Mini App also lets a person pay someone, or fund their automation wallet, straight
+> from their own MiniPay wallet. We are not in that path: the user signs, their wallet
+> broadcasts, we never hold the money and we write nothing to our database. Those
+> transactions do carry our ERC-8021 tag `celo_716fa1c99481`, so they are visible and
+> countable on-chain by anyone reading the tag. We quote no figure for them, because we
+> do not hold the ledger that would let us. The authoritative number is whatever the
+> leaderboard reads from the chain.
+>
+> We are entered in this track on the strength of the rails being real, tagged and
+> auditable. Whatever the tagged total turns out to be, small or large, it is the chain's
+> number and not ours.
 
 **One-liner:** Set one rule. Your money runs itself. An always-on agent on Celo that
 runs your savings, FX, and remittances automatically, with gas paid in stablecoins.
@@ -42,13 +59,17 @@ the MiniPay Mini App. After that, an OpenClaw agent runs it onchain forever on a
 heartbeat. No dashboards to babysit, no transactions to sign for recurring actions, gas
 paid in a stablecoin via Celo fee abstraction so the user never needs to hold CELO.
 
-Five money actions, all live on mainnet:
+Six money actions, all live on mainnet:
 
 1. **Savings sweep** - "Save 10 percent every Friday" moves idle cUSD into Aave V3 yield.
 2. **FX rebalance** - "Keep 40 percent in cKES, rebalance weekly" swaps on Mento with slippage protection.
 3. **Remittance** - "Send 5,000 NGNm on the 1st" schedules local-currency transfers.
 4. **DCA** - "Stack 2 dollars of CELO daily" dollar-cost-averages a buy.
 5. **Withdrawal** - one tap returns funds to the user's own MiniPay wallet.
+6. **Direct send** - pay someone straight from your own MiniPay wallet, picked by phone
+   number through SocialConnect or by address. Non-custodial: the user signs, their
+   wallet broadcasts, we are never in the path. Gas is still paid in the token being
+   sent, so the sender never needs CELO.
 
 ## How it works
 
@@ -60,7 +81,11 @@ Five money actions, all live on mainnet:
    safety and halt. Every action is stamped with a validation proof hash on the public
    live dashboard.
 
-Funds sit in a per-user custodial execution wallet (keys AES-256-GCM encrypted at rest) and can be withdrawn back to the user's own wallet anytime.
+There are two paths, and they differ in custody. For **scheduled** actions, funds sit in a
+per-user custodial execution wallet (keys AES-256-GCM encrypted at rest) so the agent can
+run a rule on its heartbeat without asking the user to sign each time; those funds can be
+withdrawn to the user's own wallet at any moment. For a **direct send** there is no custody
+at all: the money goes wallet to wallet, the user signs it in MiniPay, and we never hold it.
 
 ## Why it is safe (it moves real money)
 
@@ -100,7 +125,9 @@ deployed serverless; the heartbeat engine runs as a deterministic systemd timer.
 ## 60-second demo
 
 1. Open `https://remitroute.vercel.app/app` in MiniPay. It auto-connects, no signing.
-2. Fund the automation wallet with a little cUSD.
+2. Tap **Send money now**, pick a recipient by phone number or paste an address, and pay
+   them straight from your own wallet: gas in the token you send, no CELO, no custody.
+   (For the automated path instead, fund the automation wallet with a little cUSD.)
 3. Type a rule: "Save 10 percent every Friday." The agent reads it back, you confirm.
 4. Open `https://remitroute.vercel.app/dashboard` to watch the live feed: actions by city, the circuit-breaker
    status, and a proof hash per action.
