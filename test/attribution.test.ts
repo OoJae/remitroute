@@ -39,9 +39,22 @@ describe("attribution suffix wiring", () => {
 // a constant. These assertions are what stop that constant from silently drifting
 // away from the configured tag.
 describe("client attribution constant", () => {
-  it("matches what the SDK derives from the configured tag", () => {
-    if (!config.ATTRIBUTION_TAG) return; // unset in CI; server path is a no-op there
-    expect(CLIENT_ATTRIBUTION_TAG).toBe(config.ATTRIBUTION_TAG);
+  // Asserted against the literal, not against config. ATTRIBUTION_TAG is unset
+  // in CI, so an early return here left the only real drift guard disabled
+  // everywhere it mattered while the surrounding tests compared the constant to
+  // itself and passed regardless. The tag is a public attribution code assigned
+  // at registration, not a secret, so hard-coding it is the point: it is the
+  // independent value the constant must keep matching.
+  const REGISTERED_TAG = "celo_716fa1c99481";
+
+  it("matches what the SDK derives from the registered tag", () => {
+    expect(CLIENT_ATTRIBUTION_TAG).toBe(REGISTERED_TAG);
+    expect(CLIENT_ATTRIBUTION_SUFFIX).toBe(toDataSuffix(REGISTERED_TAG));
+  });
+
+  it("agrees with the configured tag wherever one is set", () => {
+    if (!config.ATTRIBUTION_TAG) return; // genuinely absent in CI
+    expect(config.ATTRIBUTION_TAG).toBe(REGISTERED_TAG);
     expect(CLIENT_ATTRIBUTION_SUFFIX).toBe(toDataSuffix(config.ATTRIBUTION_TAG));
   });
 

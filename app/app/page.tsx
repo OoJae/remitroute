@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toHex } from "viem";
 import { useAccount, useConnect } from "wagmi";
-import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
+import { encodeFunctionData, erc20Abi, parseUnits, formatUnits } from "viem";
 import { withClientAttribution } from "../../shared/attributionClient.js";
 import { TOKENS, FEE_ADAPTERS } from "../../shared/addresses.js";
+import { isProjectWallet } from "../../shared/projectWallets.js";
 
 interface AgentInfo {
   agentId: string | null;
@@ -39,6 +40,16 @@ const SEND_TOKENS = {
 } as const;
 
 type SendTokenSymbol = keyof typeof SEND_TOKENS;
+
+// Held back so a send can still pay for its own gas. Sized from the server's
+// own numbers: SEND_GAS_LIMIT of 120,000 against the 60 gwei fee-cap floor in
+// shared/viem.ts is about 0.0072 of a unit, and this leaves generous headroom
+// for a base-fee spike without meaningfully taxing the sender.
+const GAS_RESERVE: Record<SendTokenSymbol, bigint> = {
+  cUSD: parseUnits("0.05", TOKENS.cUSD.decimals),
+  USDT: parseUnits("0.05", TOKENS.USDT.decimals),
+  USDC: parseUnits("0.05", TOKENS.USDC.decimals),
+};
 
 // Minimal Reputation Registry ABI for client-side giveFeedback.
 const reputationAbi = [
@@ -181,6 +192,8 @@ export default function Home() {
   const [sendPhone, setSendPhone] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendToken, setSendToken] = useState<SendTokenSymbol>("cUSD");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [sendStatus, setSendStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -285,6 +298,10 @@ export default function Home() {
     setParsedRule(null);
     setRecipientAddr("");
     setRecipientPhone("");
+    setSendTo("");
+    setSendPhone("");
+    setSendAmount("");
+    setSendStatus("");
     setResolvedAddr("");
     setResolveStatus("");
     setStatus("");
@@ -684,16 +701,30 @@ export default function Home() {
       return;
     }
     setSendStatus("Looking up on MiniPay...");
-    const res = await fetch("/api/resolve-recipient", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: sendPhone.trim() }),
-    });
-    const json = (await res.json()) as { address?: string; error?: string };
+    let res: Response;
+    let json: { address?: string; error?: string };
+    try {
+      res = await fetch("/api/resolve-recipient", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: sendPhone.trim() }),
+      });
+      json = (await res.json()) as { address?: string; error?: string };
+    } catch {
+      // Without this the status sticks on "Looking up on MiniPay..." forever and
+      // the user has no idea the request died.
+      setSendTo("");
+      setSendStatus("Could not reach the lookup service. Paste their wallet address instead.");
+      return;
+    }
     if (res.ok && json.address) {
       setSendTo(json.address);
       setSendStatus(`Found ${json.address.slice(0, 6)}...${json.address.slice(-4)}. Enter an amount to send.`);
     } else {
+      // Clear the previous result. A well-formed but stale address passes every
+      // check in sendDirect, so leaving it armed can send money to whoever was
+      // looked up last.
+      setSendTo("");
       setSendStatus(json.error ?? "Could not look that number up.");
     }
   }, [sendPhone]);
@@ -703,7 +734,24 @@ export default function Home() {
   // still paid in cUSD through fee abstraction, so the sender needs no CELO.
   const sendDirect = useCallback(async () => {
     if (!address || typeof window === "undefined" || !window.ethereum) return;
+    // Money path, so the in-flight guard is not optional. MiniPay's sheet closes
+    // before the receipt arrives and the status text does not move for up to a
+    // minute, which reads exactly like a tap that did not register. Without this
+    // a second tap opens a second signature prompt and sends twice, and there is
+    // no way back. Same pattern the sign-in path already uses for a free signature.
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
     const eth = window.ethereum;
+    try {
+      await runSend(eth);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+
+    async function runSend(eth: NonNullable<typeof window.ethereum>): Promise<void> {
+    if (!address) return;
     const to = sendTo.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(to)) {
       setSendStatus("Enter the recipient's wallet address, or look them up by phone.");
@@ -711,6 +759,16 @@ export default function Home() {
     }
     if (to.toLowerCase() === address.toLowerCase()) {
       setSendStatus("That is your own address. Enter someone else's.");
+      return;
+    }
+    // A transfer to one of our own wallets is not a payment, it is us moving our
+    // own money, and it is excluded from the leaderboard. The automation wallet
+    // is displayed as copyable text right above this box, so this is an easy
+    // mistake to make and an invisible one to debug.
+    if (isProjectWallet(to)) {
+      setSendStatus(
+        "That is a RemitRoute automation wallet, not a person. Use the Fund box to top it up, or enter someone else's address.",
+      );
       return;
     }
     const amt = Number(sendAmount);
@@ -723,14 +781,56 @@ export default function Home() {
       setSendStatus(`${sendToken} supports at most ${token.decimals} decimal places.`);
       return;
     }
+    const value = parseUnits(sendAmount, token.decimals);
+
+    // Gas comes out of the same balance the transfer spends, because the fee
+    // currency IS the token being sent. The node reserves the fee first, so a
+    // full-balance send always reverts. The server path documents this exact
+    // trap and clamps for it; this is the client equivalent. Refusing here with
+    // the real maximum beats a revert whose message blames the sender.
+    let balance: bigint | null = null;
+    try {
+      const raw = (await eth.request({
+        method: "eth_call",
+        params: [
+          {
+            to: token.address,
+            data: encodeFunctionData({ abi: erc20Abi, functionName: "balanceOf", args: [address as `0x${string}`] }),
+          },
+          "latest",
+        ],
+      })) as string;
+      balance = BigInt(raw);
+    } catch {
+      // A balance we cannot read is not a reason to block the send. The node
+      // still enforces the real constraint; we just lose the better message.
+    }
+    if (balance !== null) {
+      const reserve = GAS_RESERVE[sendToken];
+      if (balance === 0n) {
+        setSendStatus(`You have no ${sendToken} in this wallet. Pick the token you actually hold.`);
+        return;
+      }
+      if (value + reserve > balance) {
+        const max = balance > reserve ? balance - reserve : 0n;
+        setSendStatus(
+          max === 0n
+            ? `Your ${sendToken} balance is too small to cover the transfer and its gas.`
+            : `Gas is paid in ${sendToken} too, so keep a little back. The most you can send right now is ${formatUnits(max, token.decimals)} ${sendToken}.`,
+        );
+        return;
+      }
+    }
+
+    let txHash: string | null = null;
     try {
       setSendStatus("Requesting signature in MiniPay...");
       const data = encodeFunctionData({
         abi: erc20Abi,
         functionName: "transfer",
-        args: [to as `0x${string}`, parseUnits(sendAmount, token.decimals)],
+        args: [to as `0x${string}`, value],
       });
-      const txHash = (await eth.request({
+      txHash = (await eth.request({
         method: "eth_sendTransaction",
         params: [
           {
@@ -750,26 +850,37 @@ export default function Home() {
         ok === true
           ? `Sent ${sendAmount} ${sendToken}. Transaction ${txHash.slice(0, 10)}...`
           : ok === false
-            ? "The transfer reverted. Please try again."
-            : `Submitted ${txHash.slice(0, 10)}... It is taking a while to confirm.`,
+            ? `The transfer reverted and no money moved. Transaction ${txHash.slice(0, 10)}...`
+            : `Submitted ${txHash.slice(0, 10)}... It is taking a while to confirm. Check it before sending again.`,
       );
-      if (ok === true) setSendAmount("");
-      void loadBalances();
+      // Clear the amount unless we know the transfer failed. On a slow confirm
+      // the money may well have moved, so leaving the form armed invites a
+      // second send of the same amount.
+      if (ok !== false) setSendAmount("");
+      if (onboard) void loadBalances();
     } catch (err) {
       const m = ((err as Error)?.message ?? "").toLowerCase();
-      if (m.includes("exceeds balance") || m.includes("insufficient")) {
+      // A rejection from eth.request does not prove nothing was broadcast. If a
+      // hash exists, the transaction may already be in the mempool, so say so
+      // rather than inviting a retry that could double the payment.
+      if (txHash) {
+        setSendStatus(
+          `We could not confirm this. Transaction ${txHash.slice(0, 10)}... may still go through. Check it before sending again.`,
+        );
+      } else if (m.includes("exceeds balance") || m.includes("insufficient")) {
         setSendStatus(`You do not have enough ${sendToken} in your MiniPay wallet for that amount.`);
       } else if (m.includes("denied") || m.includes("rejected")) {
-        setSendStatus("Transfer cancelled.");
+        setSendStatus("Transfer cancelled. Nothing was sent.");
       } else if (m.includes("allowance") || m.includes("gas required")) {
         // The classic fee-abstraction failure: the node priced gas in a currency
         // the sender holds none of. Name the cause rather than say "try again".
         setSendStatus(`Could not price gas in ${sendToken}. Try the token you actually hold a balance of.`);
       } else {
-        setSendStatus("Could not send. Please try again.");
+        setSendStatus("Could not send. Nothing was broadcast, so it is safe to try again.");
       }
     }
-  }, [address, sendTo, sendAmount, sendToken, loadBalances]);
+    }
+  }, [address, sendTo, sendAmount, sendToken, loadBalances, onboard]);
 
   // Pause/resume or delete a saved rule.
   const pauseResume = useCallback(
@@ -1120,7 +1231,7 @@ export default function Home() {
         </section>
       )}
 
-      {onboard && (
+      {isConnected && address && (
         <section style={card}>
           <h2 style={h2}>Send money now</h2>
           <p style={{ color: MUTED, marginTop: 0 }}>
@@ -1169,8 +1280,12 @@ export default function Home() {
               style={{ ...input, flex: "1 1 140px" }}
               aria-label={`Amount of ${sendToken} to send`}
             />
-            <button onClick={sendDirect} style={button}>
-              Send
+            <button
+              onClick={sendDirect}
+              disabled={sending}
+              style={sending ? { ...button, opacity: 0.6 } : button}
+            >
+              {sending ? "Sending..." : "Send"}
             </button>
           </div>
           {sendStatus && <p style={statusText}>{sendStatus}</p>}
