@@ -5,6 +5,7 @@ import { toHex } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
 import { withClientAttribution } from "../../shared/attributionClient.js";
+import { TOKENS, FEE_ADAPTERS } from "../../shared/addresses.js";
 
 interface AgentInfo {
   agentId: string | null;
@@ -19,6 +20,25 @@ const ZERO_HASH = `0x${"0".repeat(64)}` as const;
 
 // Tokens the user can hold in the automation wallet and withdraw.
 const WITHDRAW_TOKENS = ["cUSD", "USDC", "cEUR"] as const;
+
+// Tokens a user can pay someone with directly from their own wallet.
+//
+// Each entry carries its own fee currency, and that is the part worth getting
+// right. For cUSD the token address doubles as the fee currency, but USDC and
+// USDT are 6-decimal tokens whose gas must be priced through a fee adapter.
+// Passing the token address as feeCurrency for those two makes the node reject
+// the transaction, so the adapter is not optional.
+//
+// Most people arriving from MiniPay hold USDT rather than cUSD, and a send
+// offering only cUSD fails for them twice over: no balance to send, and no
+// balance to pay gas from either.
+const SEND_TOKENS = {
+  cUSD: { address: TOKENS.cUSD.address, decimals: TOKENS.cUSD.decimals, feeCurrency: FEE_ADAPTERS.cUSD },
+  USDT: { address: TOKENS.USDT.address, decimals: TOKENS.USDT.decimals, feeCurrency: FEE_ADAPTERS.USDT },
+  USDC: { address: TOKENS.USDC.address, decimals: TOKENS.USDC.decimals, feeCurrency: FEE_ADAPTERS.USDC },
+} as const;
+
+type SendTokenSymbol = keyof typeof SEND_TOKENS;
 
 // Minimal Reputation Registry ABI for client-side giveFeedback.
 const reputationAbi = [
@@ -160,6 +180,7 @@ export default function Home() {
   const [sendTo, setSendTo] = useState("");
   const [sendPhone, setSendPhone] = useState("");
   const [sendAmount, setSendAmount] = useState("");
+  const [sendToken, setSendToken] = useState<SendTokenSymbol>("cUSD");
   const [sendStatus, setSendStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -697,8 +718,9 @@ export default function Home() {
       setSendStatus("Enter a positive amount to send.");
       return;
     }
-    if ((sendAmount.split(".")[1] ?? "").length > 18) {
-      setSendStatus("Too many decimal places.");
+    const token = SEND_TOKENS[sendToken];
+    if ((sendAmount.split(".")[1] ?? "").length > token.decimals) {
+      setSendStatus(`${sendToken} supports at most ${token.decimals} decimal places.`);
       return;
     }
     try {
@@ -706,18 +728,19 @@ export default function Home() {
       const data = encodeFunctionData({
         abi: erc20Abi,
         functionName: "transfer",
-        args: [to as `0x${string}`, parseUnits(sendAmount, 18)],
+        args: [to as `0x${string}`, parseUnits(sendAmount, token.decimals)],
       });
       const txHash = (await eth.request({
         method: "eth_sendTransaction",
         params: [
           {
             from: address,
-            to: CUSD,
+            to: token.address,
             // Tagged so the transfer is attributable to RemitRoute onchain.
             data: withClientAttribution(data),
-            // Gas paid in cUSD via fee abstraction.
-            feeCurrency: CUSD,
+            // Gas paid in the same token being sent, via fee abstraction. For
+            // USDC and USDT this must be the adapter, not the token address.
+            feeCurrency: token.feeCurrency,
           },
         ],
       })) as string;
@@ -725,7 +748,7 @@ export default function Home() {
       const ok = await waitForReceipt(eth, txHash);
       setSendStatus(
         ok === true
-          ? `Sent ${sendAmount} cUSD. Transaction ${txHash.slice(0, 10)}...`
+          ? `Sent ${sendAmount} ${sendToken}. Transaction ${txHash.slice(0, 10)}...`
           : ok === false
             ? "The transfer reverted. Please try again."
             : `Submitted ${txHash.slice(0, 10)}... It is taking a while to confirm.`,
@@ -735,14 +758,18 @@ export default function Home() {
     } catch (err) {
       const m = ((err as Error)?.message ?? "").toLowerCase();
       if (m.includes("exceeds balance") || m.includes("insufficient")) {
-        setSendStatus("You do not have enough cUSD in your MiniPay wallet for that amount.");
+        setSendStatus(`You do not have enough ${sendToken} in your MiniPay wallet for that amount.`);
       } else if (m.includes("denied") || m.includes("rejected")) {
         setSendStatus("Transfer cancelled.");
+      } else if (m.includes("allowance") || m.includes("gas required")) {
+        // The classic fee-abstraction failure: the node priced gas in a currency
+        // the sender holds none of. Name the cause rather than say "try again".
+        setSendStatus(`Could not price gas in ${sendToken}. Try the token you actually hold a balance of.`);
       } else {
         setSendStatus("Could not send. Please try again.");
       }
     }
-  }, [address, sendTo, sendAmount, loadBalances]);
+  }, [address, sendTo, sendAmount, sendToken, loadBalances]);
 
   // Pause/resume or delete a saved rule.
   const pauseResume = useCallback(
@@ -1098,8 +1125,8 @@ export default function Home() {
           <h2 style={h2}>Send money now</h2>
           <p style={{ color: MUTED, marginTop: 0 }}>
             Pay someone straight from your own wallet. We never hold the money: you
-            sign, and it goes wallet to wallet. Gas is paid in cUSD, so you do not
-            need CELO.
+            sign, and it goes wallet to wallet. Gas is paid in the same token you
+            send, so you do not need CELO.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
             <input
@@ -1122,13 +1149,25 @@ export default function Home() {
             aria-label="Recipient address"
           />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+            <select
+              value={sendToken}
+              onChange={(e) => setSendToken(e.target.value as SendTokenSymbol)}
+              style={{ ...input, flex: "0 0 96px" }}
+              aria-label="Token to send"
+            >
+              {(Object.keys(SEND_TOKENS) as SendTokenSymbol[]).map((sym) => (
+                <option key={sym} value={sym}>
+                  {sym}
+                </option>
+              ))}
+            </select>
             <input
               value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)}
               inputMode="decimal"
-              placeholder="Amount in cUSD"
+              placeholder={`Amount in ${sendToken}`}
               style={{ ...input, flex: "1 1 140px" }}
-              aria-label="Amount of cUSD to send"
+              aria-label={`Amount of ${sendToken} to send`}
             />
             <button onClick={sendDirect} style={button}>
               Send
