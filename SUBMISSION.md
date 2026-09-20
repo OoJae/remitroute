@@ -1,6 +1,18 @@
-# RemitRoute - Celo Onchain Agents Hackathon submission
+# RemitRoute - Agents at Work submission
 
-**Track:** Real-world payments / everyday applications
+**Primary track:** Value Moved. Also entered: Real World Adoption, AskBots Growth,
+Judges' Favorite.
+
+**Attribution tag:** `celo_716fa1c99481` · **Network:** Celo mainnet (42220)
+
+**Wallets we control:** all 26 are enumerated in [WALLETS.md](WALLETS.md).
+
+> **On value moved in the judging window: it is zero, and we say so up front.** The
+> heartbeat engine ran continuously from 28 August to 20 September and attempted 166
+> scheduled actions. Every one returned `skipped_low_balance` or `skipped_dust`, and
+> none carries a transaction hash, because the custodial wallets are empty. We are
+> entered in this track on the strength of the rails being real and auditable, not on
+> a number. What we built is below; what it moved this window is nothing.
 
 **One-liner:** Set one rule. Your money runs itself. An always-on agent on Celo that
 runs your savings, FX, and remittances automatically, with gas paid in stablecoins.
@@ -52,14 +64,17 @@ Funds sit in a per-user custodial execution wallet (keys AES-256-GCM encrypted a
 
 ## Why it is safe (it moves real money)
 
-- **Spend caps** per transaction, per user per day, and global per day.
+- **Spend caps** per transaction, per user per day, and global per day (enforced in code; see the note below on how they are currently configured).
 - **Circuit breaker** that halts the engine on a failure or volume anomaly.
 - **Gas floor** that stops money movement when the stablecoin gas buffer runs low.
 - **Idempotency** at the database level, so a schedule can never double-execute.
 - **Proof hash** per action, a deterministic keccak256 digest anyone can recompute, shown on the dashboard.
 
-It is live on Celo mainnet right now, bounded by tiny caps and the circuit breaker, with
-real transactions across every action type.
+It is live on Celo mainnet right now, with real transactions across every action type in
+its history. The cap machinery in `shared/caps.ts` is still wired into every money path,
+but the operator-configured limits were raised during a previous hackathon and were never
+lowered again, so treat the circuit breaker and the gas floor, not the caps, as the
+binding safety controls today.
 
 ## Onchain identity and reputation
 
@@ -77,7 +92,8 @@ returns HTTP 402 with payment requirements until paid).
 ## Tech stack
 
 Celo mainnet (chainId 42220), MiniPay, viem, Mento SDK (FX), Aave V3 (yield), ERC-8004
-Identity + Reputation registries, x402 (thirdweb facilitator), an OpenClaw heartbeat
+Identity + Reputation registries, x402 (settled through the Celo facilitator, with a
+self-hosted EIP-3009 facilitator as the fallback path), an OpenClaw heartbeat
 agent, Neon Postgres (drizzle-orm), Next.js 15 (App Router), TypeScript. The web app is
 deployed serverless; the heartbeat engine runs as a deterministic systemd timer.
 
