@@ -194,6 +194,8 @@ export default function Home() {
   const [sendToken, setSendToken] = useState<SendTokenSymbol>("cUSD");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  // What the connected wallet actually holds, per sendable token.
+  const [sendBalances, setSendBalances] = useState<Partial<Record<SendTokenSymbol, string>>>({});
   const [sendStatus, setSendStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -272,6 +274,63 @@ export default function Home() {
     if (!isConnected || !address || onboard) return;
     void signIn();
   }, [isConnected, address, onboard, signIn]);
+
+  // Read what the connected wallet holds and preselect the token it can
+  // actually send. The default used to be cUSD for everyone, which is wrong for
+  // most people arriving from MiniPay: they hold USDT and no cUSD at all, so the
+  // first thing the app did was set them up to fail. Reads the wallet directly
+  // rather than our database, because this path has no server side.
+  useEffect(() => {
+    if (!address || typeof window === "undefined" || !window.ethereum) return;
+    const eth = window.ethereum;
+    let cancelled = false;
+    void (async () => {
+      const found: Partial<Record<SendTokenSymbol, string>> = {};
+      let best: SendTokenSymbol | null = null;
+      let bestScaled = 0;
+      for (const sym of Object.keys(SEND_TOKENS) as SendTokenSymbol[]) {
+        const t = SEND_TOKENS[sym];
+        try {
+          const raw = (await eth.request({
+            method: "eth_call",
+            params: [
+              {
+                to: t.address,
+                data: encodeFunctionData({
+                  abi: erc20Abi,
+                  functionName: "balanceOf",
+                  args: [address as `0x${string}`],
+                }),
+              },
+              "latest",
+            ],
+          })) as string;
+          const bal = BigInt(raw);
+          if (bal > 0n) {
+            found[sym] = formatUnits(bal, t.decimals);
+            const scaled = Number(formatUnits(bal, t.decimals));
+            if (scaled > bestScaled) {
+              bestScaled = scaled;
+              best = sym;
+            }
+          }
+        } catch {
+          /* a balance we cannot read just leaves the default alone */
+        }
+      }
+      if (cancelled) return;
+      setSendBalances(found);
+      // Only move the selection while the user has not typed an amount, so we
+      // never change what someone is in the middle of sending.
+      if (best && !sendAmount) setSendToken(best);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // sendAmount is read as a guard, not a trigger; re-running on every keystroke
+    // would fire a balance read per character.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
 
   // When the connected MiniPay wallet changes (the user switches accounts),
   // drop all per-user state so nothing from the previous account leaks into the
@@ -1272,6 +1331,11 @@ export default function Home() {
                 </option>
               ))}
             </select>
+            {sendBalances[sendToken] && (
+              <span style={{ ...statusText, alignSelf: "center", margin: 0 }}>
+                You have {Number(sendBalances[sendToken]).toFixed(2)} {sendToken}
+              </span>
+            )}
             <input
               value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)}
