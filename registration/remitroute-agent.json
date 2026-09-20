@@ -1,17 +1,37 @@
 {
+  "_note": "Canonical record of the ERC-8004 registration document. The <YOUR_DOMAIN> and <IPFS_IMAGE_CID> placeholders are substituted at runtime by buildRegistration in shared/registration.ts; the rendered document is served live at https://remitroute.vercel.app/.well-known/agent.json",
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "name": "RemitRoute",
-  "description": "Autonomous personal finance agent for emerging markets on Celo. Users set simple rules once in the MiniPay Mini App, for example save 10 percent every Friday, keep 40 percent in cKES and rebalance weekly, send 5,000 cNGN on the 1st, or stack 2 dollars of CELO daily. RemitRoute then runs them onchain continuously on a heartbeat: recurring savings sweeps into Aave, local-currency FX swaps via Mento, scheduled remittances, and DCA, all with gas paid in stablecoins through Celo fee abstraction. Accessible via MiniPay. Paid FX-route API available to other agents via x402.",
+  "description": "Autonomous personal finance agent for emerging markets on Celo. Users set simple rules once in the MiniPay Mini App, for example save 10 percent every Friday, keep 40 percent in cKES and rebalance weekly, send 5,000 NGNm on the 1st, or stack 2 dollars of CELO daily. RemitRoute then runs them onchain continuously on a heartbeat: recurring savings sweeps into Aave, local-currency FX swaps via Mento, scheduled remittances, and DCA, all with gas paid in stablecoins through Celo fee abstraction. Accessible via MiniPay. Paid FX-route API available to other agents via x402.",
   "image": "ipfs://<IPFS_IMAGE_CID>",
   "services": [
-    { "name": "web", "endpoint": "https://<YOUR_DOMAIN>" },
-    { "name": "A2A", "endpoint": "https://<YOUR_DOMAIN>/.well-known/agent.json" },
-    { "name": "MCP", "endpoint": "https://<YOUR_DOMAIN>/mcp", "version": "2025-06-18" },
-    { "name": "x402", "endpoint": "https://<YOUR_DOMAIN>/api/fx-route" }
+    {
+      "name": "web",
+      "endpoint": "https://<YOUR_DOMAIN>"
+    },
+    {
+      "name": "A2A",
+      "endpoint": "https://<YOUR_DOMAIN>/.well-known/agent.json"
+    },
+    {
+      "name": "MCP",
+      "endpoint": "https://<YOUR_DOMAIN>/mcp",
+      "version": "2025-06-18"
+    },
+    {
+      "name": "x402",
+      "endpoint": "https://<YOUR_DOMAIN>/api/fx-route"
+    }
   ],
   "registrations": [
-    { "agentId": 9308, "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432" }
+    {
+      "agentId": 9308,
+      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    }
   ],
-  "supportedTrust": ["reputation", "validation"],
+  "supportedTrust": [
+    "reputation",
+    "validation"
+  ],
   "onAigora": true
 }

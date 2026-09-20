@@ -7,7 +7,7 @@ description: Use to send a stablecoin transfer onchain for a scheduled remittanc
 
 ## Purpose
 
-Executes scheduled stablecoin transfers: remittances (for example sending cNGN to a family member) and bill drips (paying a biller or merchant on a schedule). This is the simplest money-movement skill and is the fastest path to a real onchain transaction during the build.
+Executes scheduled stablecoin transfers: remittances (for example sending NGNm to a family member) and bill drips (paying a biller or merchant on a schedule). This is the simplest money-movement skill and is the fastest path to a real onchain transaction during the build.
 
 ## When to use
 

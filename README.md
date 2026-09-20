@@ -5,7 +5,7 @@
 RemitRoute is an always-on agent on Celo for recurring stablecoin personal finance,
 with a [MiniPay](https://www.opera.com/products/minipay) Mini App as the front door.
 A user sets a simple rule once in plain language (save 10 percent every Friday, keep
-40 percent in cKES and rebalance weekly, send 5,000 cNGN on the 1st, stack 2 dollars
+40 percent in cKES and rebalance weekly, send 5,000 NGNm on the 1st, stack 2 dollars
 of CELO daily) and an autonomous OpenClaw agent runs it onchain forever on a 20-minute
 heartbeat, paying gas in a stablecoin via Celo fee abstraction. No signing for
 recurring actions. Funds stay in the user's own execution wallet, withdrawable anytime.
@@ -23,7 +23,7 @@ is growing fastest.
 |---|---|---|
 | `savings_sweep` | "Save 10 percent every Friday" | Sweeps idle cUSD into Aave V3 yield on a cadence |
 | `fx_rebalance` | "Keep 40 percent in cKES, rebalance weekly" | Holds a target currency mix, swapped on Mento with slippage protection |
-| `remittance` | "Send 5,000 cNGN on the 1st" | Scheduled local-currency transfers |
+| `remittance` | "Send 5,000 NGNm on the 1st" | Scheduled local-currency transfers |
 | `dca` | "Stack 2 dollars of CELO daily" | Dollar-cost-average buys on a cadence |
 | `withdrawal` | one tap | Pulls funds back to the user's MiniPay wallet |
 

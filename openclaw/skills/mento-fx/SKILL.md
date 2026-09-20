@@ -7,7 +7,7 @@ description: Use to swap between local-currency stablecoins on Celo through Ment
 
 ## Purpose
 
-Performs onchain FX between Mento stablecoins (for example cUSD to cKES, cNGN, cGHS, cZAR, cEUR). This powers two schedule kinds: `dca` (swap a fixed stablecoin amount into a target asset on a cadence) and `fx_rebalance` (move basket weights back toward target). Onchain FX is a named Celo use case and a core source of the agent genuine, diverse transaction volume.
+Performs onchain FX between Mento stablecoins (for example cUSD to cKES, NGNm, cGHS, cZAR, cEUR). This powers two schedule kinds: `dca` (swap a fixed stablecoin amount into a target asset on a cadence) and `fx_rebalance` (move basket weights back toward target). Onchain FX is a named Celo use case and a core source of the agent genuine, diverse transaction volume.
 
 ## When to use
 
@@ -40,7 +40,7 @@ Performs onchain FX between Mento stablecoins (for example cUSD to cKES, cNGN, c
 - Always set `amountOutMin`. Never swap with zero slippage protection.
 - Bound slippage at the configured maximum. Reject a swap that would exceed it.
 - Enforce per-user and global daily spend caps before swapping.
-- Resolve token addresses from `shared/addresses.ts` only. Verify cKES, cNGN, cGHS, cZAR, cEUR and the Mento Broker on Celoscan or Celopedia before mainnet use.
+- Resolve token addresses from `shared/addresses.ts` only. Verify cKES, NGNm, cGHS, cZAR, cEUR and the Mento Broker on Celoscan or Celopedia before mainnet use.
 - Set `feeCurrency`. Respect the per-schedule lock.
 
 ## Outputs

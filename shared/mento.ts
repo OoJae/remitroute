@@ -17,6 +17,9 @@ export const MENTO_SYMBOL_ALIASES: Record<string, string> = {
   cUSD: "USDm",
   cEUR: "EURm",
   cKES: "KESm",
+  // Users type "cNGN" for naira, so we accept it, but it resolves to Mento's
+  // NGNm. That is a different asset from the fiat-backed cNGN issued by the
+  // Africa Stablecoin Consortium, which we do not support.
   cNGN: "NGNm",
   cGHS: "GHSm",
   cZAR: "ZARm",

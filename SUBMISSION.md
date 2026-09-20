@@ -34,7 +34,7 @@ Five money actions, all live on mainnet:
 
 1. **Savings sweep** - "Save 10 percent every Friday" moves idle cUSD into Aave V3 yield.
 2. **FX rebalance** - "Keep 40 percent in cKES, rebalance weekly" swaps on Mento with slippage protection.
-3. **Remittance** - "Send 5,000 cNGN on the 1st" schedules local-currency transfers.
+3. **Remittance** - "Send 5,000 NGNm on the 1st" schedules local-currency transfers.
 4. **DCA** - "Stack 2 dollars of CELO daily" dollar-cost-averages a buy.
 5. **Withdrawal** - one tap returns funds to the user's own MiniPay wallet.
 
@@ -95,7 +95,7 @@ deployed serverless; the heartbeat engine runs as a deterministic systemd timer.
 Primary:
 
 > RemitRoute is live on @Celo. Set one rule in MiniPay (save 10% every Friday, send
-> cNGN on the 1st, keep 40% in cKES) and an onchain agent runs it forever, gas paid in
+> NGNm on the 1st, keep 40% in cKES) and an onchain agent runs it forever, gas paid in
 > stablecoins. ERC-8004 agent #9308. Built for Lagos, Nairobi, Joburg. https://remitroute.vercel.app
 > @CeloDevs
 
