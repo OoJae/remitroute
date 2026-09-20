@@ -156,6 +156,11 @@ export default function Home() {
   const [recipientPhone, setRecipientPhone] = useState("");
   const [resolvedAddr, setResolvedAddr] = useState("");
   const [resolveStatus, setResolveStatus] = useState("");
+  // Direct send: the user's own wallet pays the recipient, with no custody step.
+  const [sendTo, setSendTo] = useState("");
+  const [sendPhone, setSendPhone] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendStatus, setSendStatus] = useState("");
   const [withdrawToken, setWithdrawToken] = useState<string>("cUSD");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -650,6 +655,95 @@ export default function Home() {
     }
   }, [recipientPhone]);
 
+  // Look up a direct-send recipient by phone number, same SocialConnect path the
+  // rule builder uses.
+  const resolveSendRecipient = useCallback(async () => {
+    if (sendPhone.trim().length < 8) {
+      setSendStatus("Enter the number in international format, e.g. +2348012345678.");
+      return;
+    }
+    setSendStatus("Looking up on MiniPay...");
+    const res = await fetch("/api/resolve-recipient", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: sendPhone.trim() }),
+    });
+    const json = (await res.json()) as { address?: string; error?: string };
+    if (res.ok && json.address) {
+      setSendTo(json.address);
+      setSendStatus(`Found ${json.address.slice(0, 6)}...${json.address.slice(-4)}. Enter an amount to send.`);
+    } else {
+      setSendStatus(json.error ?? "Could not look that number up.");
+    }
+  }, [sendPhone]);
+
+  // Pay someone straight from the user's own MiniPay wallet. No custody: we never
+  // hold the money, the user signs, and the transfer goes wallet to wallet. Gas is
+  // still paid in cUSD through fee abstraction, so the sender needs no CELO.
+  const sendDirect = useCallback(async () => {
+    if (!address || typeof window === "undefined" || !window.ethereum) return;
+    const eth = window.ethereum;
+    const to = sendTo.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to)) {
+      setSendStatus("Enter the recipient's wallet address, or look them up by phone.");
+      return;
+    }
+    if (to.toLowerCase() === address.toLowerCase()) {
+      setSendStatus("That is your own address. Enter someone else's.");
+      return;
+    }
+    const amt = Number(sendAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setSendStatus("Enter a positive amount to send.");
+      return;
+    }
+    if ((sendAmount.split(".")[1] ?? "").length > 18) {
+      setSendStatus("Too many decimal places.");
+      return;
+    }
+    try {
+      setSendStatus("Requesting signature in MiniPay...");
+      const data = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [to as `0x${string}`, parseUnits(sendAmount, 18)],
+      });
+      const txHash = (await eth.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: address,
+            to: CUSD,
+            // Tagged so the transfer is attributable to RemitRoute onchain.
+            data: withClientAttribution(data),
+            // Gas paid in cUSD via fee abstraction.
+            feeCurrency: CUSD,
+          },
+        ],
+      })) as string;
+      setSendStatus("Confirming your transfer...");
+      const ok = await waitForReceipt(eth, txHash);
+      setSendStatus(
+        ok === true
+          ? `Sent ${sendAmount} cUSD. Transaction ${txHash.slice(0, 10)}...`
+          : ok === false
+            ? "The transfer reverted. Please try again."
+            : `Submitted ${txHash.slice(0, 10)}... It is taking a while to confirm.`,
+      );
+      if (ok === true) setSendAmount("");
+      void loadBalances();
+    } catch (err) {
+      const m = ((err as Error)?.message ?? "").toLowerCase();
+      if (m.includes("exceeds balance") || m.includes("insufficient")) {
+        setSendStatus("You do not have enough cUSD in your MiniPay wallet for that amount.");
+      } else if (m.includes("denied") || m.includes("rejected")) {
+        setSendStatus("Transfer cancelled.");
+      } else {
+        setSendStatus("Could not send. Please try again.");
+      }
+    }
+  }, [address, sendTo, sendAmount, loadBalances]);
+
   // Pause/resume or delete a saved rule.
   const pauseResume = useCallback(
     async (id: string, action: "pause" | "resume") => {
@@ -996,6 +1090,51 @@ export default function Home() {
               ? nextTickEta(lastCycleAt, now)
               : "The agent evaluates rules on a ~20-minute heartbeat, so it runs at the first tick on or after this time."}
           </p>
+        </section>
+      )}
+
+      {onboard && (
+        <section style={card}>
+          <h2 style={h2}>Send money now</h2>
+          <p style={{ color: MUTED, marginTop: 0 }}>
+            Pay someone straight from your own wallet. We never hold the money: you
+            sign, and it goes wallet to wallet. Gas is paid in cUSD, so you do not
+            need CELO.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
+            <input
+              value={sendPhone}
+              onChange={(e) => setSendPhone(e.target.value)}
+              inputMode="tel"
+              placeholder="Recipient phone +234..."
+              style={{ ...input, flex: "1 1 170px" }}
+              aria-label="Recipient phone number"
+            />
+            <button onClick={resolveSendRecipient} style={buttonGhost}>
+              Find on MiniPay
+            </button>
+          </div>
+          <input
+            value={sendTo}
+            onChange={(e) => setSendTo(e.target.value)}
+            placeholder="or paste their wallet address 0x..."
+            style={{ ...input, width: "100%" }}
+            aria-label="Recipient address"
+          />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+            <input
+              value={sendAmount}
+              onChange={(e) => setSendAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder="Amount in cUSD"
+              style={{ ...input, flex: "1 1 140px" }}
+              aria-label="Amount of cUSD to send"
+            />
+            <button onClick={sendDirect} style={button}>
+              Send
+            </button>
+          </div>
+          {sendStatus && <p style={statusText}>{sendStatus}</p>}
         </section>
       )}
 
