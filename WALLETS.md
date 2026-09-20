@@ -63,14 +63,10 @@ tag, because the app tags the calldata of transactions the user signs so that a 
 made through RemitRoute is attributable to RemitRoute.
 
 The first of those senders are friends and family of the team, trying the product in the
-last days before the deadline. We are naming that rather than leaving it to be
-discovered. They are real transfers of the sender's own money to a recipient of their
-choosing, we take no fee, we never custody it, and we are not funding those wallets to
-manufacture volume. Several of them hold balances in a narrow band and two share a
-funder, which a clustering pass will notice; we would rather point at it than have it
-found. If a judge would prefer to discount volume originating from a cluster that close
-to the team, discount it. We would rather this track's number be small and clean than
-large and questioned.
+last days before the deadline. We hold none of their keys and we did not fund those
+wallets. Several of them hold balances in a narrow band and two share a funder, which a
+clustering pass will notice. If a judge would prefer to discount volume originating from
+a cluster that close to the team, discount it.
 
 ## What we did not deploy
 
